@@ -234,6 +234,7 @@ test('model changes and editor closure discard old connection and account-switch
   await page.evaluate(() => { (window as unknown as { codexTest: ChatGPTFixture }).codexTest.holdCheck = true; });
   await editor.getByRole('button', { name: '刷新连接', exact: true }).click();
   await expect(editor.getByRole('region', { name: 'ChatGPT 连接' })).toHaveAttribute('aria-busy', 'true');
+  await expect.poll(async () => (await calls(page, 'get_chatgpt_status')).length).toBe(1);
   await editor.getByLabel('模型名称').fill('another-model');
   await page.evaluate(() => { (window as unknown as { codexTest: ChatGPTFixture }).codexTest.releaseCheck(); });
   await expect(editor.getByRole('status')).toHaveCount(0);
@@ -244,7 +245,7 @@ test('model changes and editor closure discard old connection and account-switch
   await page.evaluate(() => { (window as unknown as { codexTest: ChatGPTFixture }).codexTest.holdSignIn = true; });
   await editor.getByRole('button', { name: '添加账号', exact: true }).click();
   await expect(editor.getByRole('status')).toContainText('系统浏览器');
-  expect((await calls(page, 'sign_in_chatgpt')).at(-1)?.args).toEqual({ model: 'another-model', newAccount: true });
+  await expect.poll(async () => (await calls(page, 'sign_in_chatgpt')).at(-1)?.args).toEqual({ model: 'another-model', newAccount: true });
   await editor.getByRole('button', { name: '关闭配置', exact: true }).click();
   await expect.poll(async () => (await calls(page, 'cancel_chatgpt_sign_in')).length).toBe(1);
   await page.evaluate(() => { (window as unknown as { codexTest: ChatGPTFixture }).codexTest.finishSignIn(); });
