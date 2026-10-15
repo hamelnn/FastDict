@@ -60,7 +60,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     model: 'qwen3:4b',
   },
   { id: 'custom', name: '自定义 API', kind: 'openai', baseUrl: 'https://api.example.com/v1', model: '' },
-  { id: 'codex', name: '本机 Codex（GPT 订阅）', kind: 'codex', baseUrl: '', model: 'gpt-6-luna' },
+  { id: 'codex', name: 'ChatGPT 订阅', kind: 'codex', baseUrl: '', model: 'gpt-6-luna' },
 ];
 
 export const labelForLanguage = (code: string) =>

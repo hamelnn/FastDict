@@ -112,6 +112,14 @@ export default function App() {
   const active = providers.find((p) => p.id === preferences.activeProviderId) || providers[0];
   const busy = ['capturing', 'ocr', 'translating'].includes(phase);
   const notify = useCallback((message: string) => setToast(message), []);
+  const manageChatGPTUsage = useCallback(async () => {
+    try {
+      const { openChatGPTUsage } = await import('./lib/codex');
+      await openChatGPTUsage();
+    } catch (cause) {
+      notify(errorMessage(cause));
+    }
+  }, [notify]);
   useEffect(() => {
     if (!MOBILE) return;
     const viewport = window.visualViewport;
@@ -263,7 +271,7 @@ export default function App() {
           throw new Error('请先添加并配置翻译服务。');
         }
         if (active.kind === 'codex' && (!isNative || MOBILE)) {
-          throw new Error('本机 Codex 仅支持桌面应用，请在 Windows 或 macOS 版使用。');
+          throw new Error('ChatGPT 订阅翻译目前仅支持 Windows 和 macOS 桌面版。');
         }
         const apiKey = active.kind === 'codex' ? '' : await getApiKey(active.id);
         if (job !== jobRef.current) return;
@@ -294,6 +302,9 @@ export default function App() {
         const elapsed = performance.now() - started;
         setDuration(elapsed);
         setPhase('idle');
+        if (active.kind === 'codex') {
+          setCodexChecks(current => ({ ...current, [active.id]: { model: active.model, detected: true } }));
+        }
         try {
           setHistory(
             addHistory({
@@ -314,7 +325,12 @@ export default function App() {
         }
       } catch (e) {
         if (job !== jobRef.current || controller.signal.aborted) return;
-        setError(errorMessage(e));
+        const message = errorMessage(e);
+        setError(message);
+        if (active?.kind === 'codex' && /登录|重新授权|未授权|未提供此模型/.test(message)) {
+          setCodexChecks(current => ({ ...current, [active.id]: { model: active.model, detected: false } }));
+          setEditing(active);
+        }
         setPhase('error');
       }
     },
@@ -591,7 +607,7 @@ export default function App() {
     }
   };
   const saveProvider = async (provider: Provider, key: string, removeKey: boolean) => {
-    if (provider.kind === 'codex' && (!isNative || MOBILE)) throw new Error('本机 Codex 仅支持桌面应用，请在 Windows 或 macOS 版使用。');
+    if (provider.kind === 'codex' && (!isNative || MOBILE)) throw new Error('ChatGPT 订阅翻译目前仅支持 Windows 和 macOS 桌面版。');
     if (provider.kind !== 'codex') {
       if (removeKey) await deleteApiKey(provider.id);
       else if (key.trim()) await saveApiKey(provider.id, key.trim());
@@ -607,7 +623,7 @@ export default function App() {
     updatePreferences({ activeProviderId: saved.id });
     setEditing(null);
     setShowPresets(false);
-    notify(provider.kind === 'codex' ? 'Codex 配置已保存' : 'API 配置已保存');
+    notify(provider.kind === 'codex' ? 'ChatGPT 配置已保存' : 'API 配置已保存');
   };
   const removeProvider = async (provider: Provider) => {
     try {
@@ -618,7 +634,7 @@ export default function App() {
         updatePreferences({ activeProviderId: remaining[0]?.id || '' });
       }
       setEditing(null);
-      notify(provider.kind === 'codex' ? 'Codex 配置已移除' : 'API 配置已移除');
+      notify(provider.kind === 'codex' ? 'ChatGPT 配置已移除' : 'API 配置已移除');
     } catch (e) {
       notify(errorMessage(e));
     }
@@ -637,16 +653,18 @@ export default function App() {
     if (MOBILE) window.scrollTo({ top: 0 });
   };
   const recordCodexStatus = (provider: Provider, status: CodexStatus | null) => {
-    setCodexChecks(current => ({ ...current, [provider.id]: {
+    // All subscription providers share the native selected account. Invalidate
+    // the other model checks when its connection or authorization changes.
+    setCodexChecks({ [provider.id]: {
       model: provider.model.trim(),
-      detected: Boolean(status?.available && status.authenticated && status.authMode === 'chatgpt' && status.modelAvailable),
-    } }));
+      detected: Boolean(status?.available && status.connected && status.planEnabled && status.modelAvailable),
+    } });
   };
   const codexDetected = (provider: Provider) => isNative && !MOBILE && codexChecks[provider.id]?.model === provider.model && codexChecks[provider.id]?.detected;
   const readyCount = providers.filter(provider => provider.kind !== 'codex' && (provider.hasKey || isKeylessProvider(provider))).length;
   const connectionDetected = active?.kind === 'codex' ? codexDetected(active) : readyCount > 0;
   const connectionLabel = active?.kind === 'codex'
-    ? !isNative || MOBILE ? 'Codex 仅限桌面' : codexDetected(active) ? 'Codex 已检测' : 'Codex 待检测'
+    ? !isNative || MOBILE ? 'ChatGPT 仅限桌面' : codexDetected(active) ? 'ChatGPT 已连接' : 'ChatGPT 待连接'
     : readyCount ? (MOBILE ? '已就绪' : '随时就绪') : (MOBILE ? '待配置 API' : '等待连接服务');
 
   return (
@@ -868,7 +886,7 @@ export default function App() {
                   <span className="onboarding-icon"><Sparkles size={22} strokeWidth={1.6} /></span>
                   <div>
                     <h2>添加你的第一个翻译服务</h2>
-                    <p>{isNative && !MOBILE ? '选择 API 服务并填写自己的地址、模型和密钥，或接入已通过 ChatGPT 订阅登录的本机 Codex。' : '选择服务模板或自定义接口，填写自己的 API 地址、模型和密钥，再开始截图翻译。'}</p>
+                    <p>{isNative && !MOBILE ? '选择 API 服务并填写自己的地址、模型和密钥，或登录 ChatGPT，授权使用订阅翻译。' : '选择服务模板或自定义接口，填写自己的 API 地址、模型和密钥，再开始截图翻译。'}</p>
                   </div>
                   <button className="button primary" onClick={() => setShowPresets(true)}><Plus size={16} />添加翻译服务</button>
                 </section>
@@ -1178,6 +1196,10 @@ export default function App() {
                     </select>
                     <ChevronDown size={12} />
                   </div>
+                  {active?.kind === 'codex' && isNative && !MOBILE && <div className="chatgpt-plan-label" aria-label="ChatGPT 订阅用量">
+                    <span>{codexDetected(active) || phase === 'translating' ? '使用 ChatGPT 套餐' : 'ChatGPT 订阅翻译'}</span>
+                    <button className="text-button" type="button" onClick={() => { void manageChatGPTUsage(); }}>管理用量</button>
+                  </div>}
                   <div className="translate-actions">
                     {!MOBILE && <span className="enter-hint">{shortcutLabels.translate}</span>}
                     {busy ? (
@@ -1203,6 +1225,8 @@ export default function App() {
               {error && (
                 <div className="error-banner" role="alert">
                   <span>{error}</span>
+                  {active?.kind === 'codex' && /订阅用量|用量.*上限|用量.*不可用/.test(error) &&
+                    <button className="button primary small" onClick={() => { void manageChatGPTUsage(); }}>管理用量</button>}
                   <button
                     className="icon-button"
                     aria-label="关闭错误提示"

@@ -1305,6 +1305,16 @@ svg {
 .codex-connection p { margin: 0 0 12px; }
 .codex-connection .codex-status { margin: 12px 0 0; }
 .codex-connection small { display: block; margin-top: 10px; color: #85927c; font-size: 11px; }
+.chatgpt-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.chatgpt-actions [role="status"] { display: inline-flex; align-items: center; gap: 6px; }
+.chatgpt-sign-in { background: #111; border: 1px solid #111; color: #fff; min-height: 38px; padding: 9px 16px; font-weight: 600; }
+.chatgpt-sign-in:hover { background: #333; border-color: #333; }
+.chatgpt-plan-notice { margin-top: 16px; padding: 16px; border: 1px solid #b9cdb7; border-radius: 9px; background: #fff; }
+.chatgpt-plan-notice strong { color: #304d3c; }
+.chatgpt-plan-notice p { margin: 8px 0 12px; }
+.chatgpt-plan-label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 10px; color: #687c5e; }
+.chatgpt-plan-label .text-button { font-size: 10px; padding: 3px 0; }
+.sidebar-mode .chatgpt-plan-label { justify-content: flex-start; }
 .modal-footer {
   display: flex;
   justify-content: space-between;

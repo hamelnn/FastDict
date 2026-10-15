@@ -82,7 +82,7 @@ export function isKeylessProvider(provider: Pick<Provider, 'kind' | 'baseUrl'>):
 }
 
 export function providerEndpoint(provider: Pick<Provider, 'kind' | 'baseUrl' | 'model'>): string {
-  if (provider.kind === 'codex') throw new Error('本机 Codex 通过桌面应用连接，不使用 API 地址。');
+  if (provider.kind === 'codex') throw new Error('ChatGPT 订阅通过官方授权连接，不使用 API 地址或密钥配置。');
   const url = validateEndpoint(provider.baseUrl);
   let path = url.pathname.replace(/\/+$/, '');
   if (provider.kind === 'openai') {

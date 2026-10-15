@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HistoryItem, Provider } from '../../types';
-import { addHistory, clearHistory, DEFAULT_PREFERENCES, deleteApiKey, getApiKey, HISTORY_LIMIT, loadHistory, loadPreferences, loadProviders, saveApiKey, saveHistory, savePreferences, saveProviders } from '../storage';
+import { acknowledgeChatGPTPlan, addHistory, clearHistory, DEFAULT_PREFERENCES, deleteApiKey, getApiKey, hasAcknowledgedChatGPTPlan, HISTORY_LIMIT, loadHistory, loadPreferences, loadProviders, saveApiKey, saveHistory, savePreferences, saveProviders } from '../storage';
 import { PROVIDER_PRESETS } from '../catalog';
 
 let values: Map<string, string>;
@@ -74,6 +74,22 @@ describe('local metadata and key storage', () => {
     expect(values.get('fastdict.v1.providers')).not.toContain('ignored.example');
     expect(values.get('fastdict.v1.providers')).not.toContain('must-not-persist');
     expect(values.get('fastdict.v1.providers')).not.toContain('authToken');
+  });
+  it('migrates only the old default subscription label and preserves identifiers, history and user names', () => {
+    const oldDefault = { id: 'existing-subscription', name: '本机 Codex（GPT 订阅）', kind: 'codex', model: 'gpt-6-luna', baseUrl: '', hasKey: false };
+    const custom = { ...oldDefault, id: 'custom-subscription', name: 'My Codex' };
+    const original = JSON.stringify([oldDefault, custom]);
+    values.set('fastdict.v1.providers', original);
+    saveHistory([{ ...history(1), providerName: oldDefault.name }]);
+    expect(loadProviders()).toEqual([{ ...oldDefault, name: 'ChatGPT 订阅' }, custom]);
+    expect(values.get('fastdict.v1.providers')).toBe(original);
+    expect(loadHistory()[0].providerName).toBe(oldDefault.name);
+  });
+  it('persists only the first-plan-use acknowledgement and no identity or tokens', () => {
+    expect(hasAcknowledgedChatGPTPlan()).toBe(false);
+    acknowledgeChatGPTPlan();
+    expect(hasAcknowledgedChatGPTPlan()).toBe(true);
+    expect([...values.entries()]).toEqual([['fastdict.v1.chatgptPlanNotice', 'acknowledged']]);
   });
   it('preserves an intentionally empty provider list', () => {
     saveProviders([]);

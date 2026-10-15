@@ -1,4 +1,6 @@
-# 本机 Codex 与 GPT 订阅
+# 0.3.1 历史说明：本机 Codex 与 GPT 订阅
+
+本页仅适用于已发布的 FastLingo 0.3.1。**0.4.0 源码已改用官方 Sign in with ChatGPT**，不再启动 Codex CLI；新版本配置与迁移请看 [ChatGPT 登录说明](chatgpt.md)。0.3.1 的测试结果不代表 0.4.0 已完成真实授权或翻译验收。
 
 FastLingo 桌面版可通过本机 Codex 使用 ChatGPT 订阅翻译，默认模型为 `gpt-6-luna`。此入口属于 0.3.1 的新增功能，0.3.0 安装包不包含它。
 

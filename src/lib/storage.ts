@@ -75,11 +75,23 @@ function providerMetadata(value: unknown): Provider | null {
   const id = boundedString(item.id, 120);
   const kind = item.kind as ProviderKind;
   if (!PROVIDER_ID.test(id) || !PROVIDER_KINDS.has(kind)) return null;
+  const savedName = boundedString(item.name, 80);
   return {
-    id, name: boundedString(item.name, 80), kind,
+    id, name: kind === 'codex' && savedName === '本机 Codex（GPT 订阅）' ? 'ChatGPT 订阅' : savedName, kind,
     baseUrl: kind === 'codex' ? '' : boundedString(item.baseUrl, 2000), model: boundedString(item.model, 200),
     hasKey: kind === 'codex' ? false : isNative ? item.hasKey === true : sessionKeys.has(id),
   };
+}
+
+/** This flag records only the notice acknowledgement, never identity or credentials. */
+export function hasAcknowledgedChatGPTPlan(): boolean {
+  try { return storage().getItem(STORAGE_PREFIX + 'chatgptPlanNotice') === 'acknowledged'; }
+  catch { return false; }
+}
+
+export function acknowledgeChatGPTPlan(): void {
+  try { storage().setItem(STORAGE_PREFIX + 'chatgptPlanNotice', 'acknowledged'); }
+  catch { /* The notice can be shown again if storage is unavailable. */ }
 }
 
 export function loadProviders(): Provider[] {

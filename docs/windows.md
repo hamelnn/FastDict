@@ -1,6 +1,16 @@
 # FastLingo · Windows 桌面版
 
-0.3.1 新增[本机 Codex（GPT 订阅）](codex.md)：本机 Codex 通过 ChatGPT 登录后，在添加服务时选择该入口，检测连接并保存，默认模型为 `gpt-6-luna`。已修复将 Codex 非致命配置警告误判为工具调用的问题；真实订阅中英翻译和取消已通过原生测试。
+## 0.4.0 源码：官方 ChatGPT 登录
+
+当前 0.4.0 源码已改用官方 [Sign in with ChatGPT](chatgpt.md)，尚未发布。添加“ChatGPT 订阅”服务后，点击 **Continue with ChatGPT**，在系统浏览器为 FastLingo 登录授权，再从账号模型目录选择模型并保存。默认 `gpt-6-luna`，以当前账号实际可用目录为准。
+
+不再要求安装 Codex，也不读取 Codex 登录凭据。旧版 Codex 服务配置保留，但须为 FastLingo 重新授权。翻译通过公开 Responses API 流式显示；支持取消、选择已保存账号、断开连接和管理用量。API 服务继续使用自己的地址、模型和密钥。
+
+当前已通过 164 项自动化测试：54 项核心、19 项构建脚本、60 项前端交互和 31 项原生测试。Windows 安装包与便携包已生成；真实 OAuth 授权及订阅翻译仍待验收。旧版实测结果不会作为本次登录流程的验证结论。详见 [验证范围](validation.md)。
+
+## 已发布的 0.3.1
+
+0.3.1 使用[本机 Codex（GPT 订阅）](codex.md)：本机 Codex 通过 ChatGPT 登录后，在添加服务时选择该入口，检测连接并保存，默认模型为 `gpt-6-luna`。该版本修复了将 Codex 非致命配置警告误判为工具调用的问题；当时的真实订阅中英翻译和取消已通过原生测试。
 
 0.3.1 共 150 项自动化测试通过。最终便携包已在界面中完成真实 GPT-6 Luna 翻译、Esc 取消和关闭窗口退出，实际进程路径与 ZIP 中可执行文件哈希均已核对；未重新实测托盘、截图与系统自启。
 
@@ -26,7 +36,7 @@
 
 从 [0.3.1 GitHub Release](https://github.com/hamelnn/FastDict/releases/tag/v0.3.1) 下载 `FastLingo_0.3.1_x64-setup.exe` 或 `FastLingo-Windows-x64-0.3.1.zip`。便携版需解压后运行，并保持 `FastLingo.exe` 与附带 DLL 在同一文件夹。若系统缺少 WebView2 Runtime，请从 [Microsoft 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。
 
-首次打开，在偏好设置添加翻译服务、API 地址、模型和密钥，再选择 OCR 与目标语言。
+首次打开没有预设服务。在偏好设置添加 API 地址、模型和密钥，再选择 OCR 与目标语言。下载的 0.3.1 订阅入口仍需本机 Codex；从 0.4.0 源码构建的订阅入口须在浏览器为 FastLingo 单独授权，配置见 [ChatGPT 登录说明](chatgpt.md)。
 
 | 操作 | 入口 |
 | --- | --- |
@@ -37,7 +47,7 @@
 | 隐藏侧栏，继续后台运行 | 界面内“最小化到托盘” |
 | 完全退出 | 标题栏 X（退出模式）、托盘菜单、设置或 `Ctrl+Alt+Q` |
 
-拖动选区后松开鼠标即开始本地 OCR，并在侧栏显示流式译文。截图始终自动翻译；“粘贴与导入后自动翻译”仅控制另外两种入口。OCR 资源随应用打包，API Key 保存到 Windows 凭据库。
+拖动选区后松开鼠标即开始本地 OCR，并在侧栏显示结果。截图始终自动翻译；“粘贴与导入后自动翻译”仅控制另外两种入口。OCR 资源随应用打包，API Key 保存到 Windows 凭据库。0.4.0 的 ChatGPT 译文支持流式显示，OAuth 凭据由原生端独立加密保存，系统凭据库存放加密密钥；界面提供用量管理和断开连接。
 
 ## 从源码构建
 

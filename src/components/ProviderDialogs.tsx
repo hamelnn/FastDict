@@ -5,16 +5,17 @@ import { PROVIDER_PRESETS } from '../lib/catalog';
 import { isMobile, isNative, isNativeMac, operatingSystem } from '../lib/platform';
 import { validateEndpoint } from '../lib/translation';
 import type { CodexStatus } from '../lib/codex';
+import { acknowledgeChatGPTPlan, hasAcknowledgedChatGPTPlan } from '../lib/storage';
 
 const desktopCodex = isNative && !isMobile;
-const desktopOnly = '本机 Codex 仅支持桌面应用，请在 Windows 或 macOS 版使用。';
+const desktopOnly = 'ChatGPT 订阅翻译仅支持桌面应用，请在 Windows 或 macOS 版使用。';
 
 function codexStatusMessage(status: CodexStatus): string {
-  if (!status.available) return status.message || '未找到可用的本机 Codex，请先安装并登录。';
-  if (status.authMode === 'apikey') return '当前 Codex 使用 API Key 登录。请在 Codex 中改用 ChatGPT 订阅登录，然后重新检测。';
-  if (!status.authenticated || status.authMode !== 'chatgpt') return status.message || 'Codex 尚未通过 ChatGPT 登录，请先在本机 Codex 中完成登录。';
-  if (!status.modelAvailable) return status.message || '已通过 ChatGPT 登录，但模型目录中未找到所选模型。请确认模型名称。';
-  return `已通过 ChatGPT 登录，已发现所选模型${status.version ? `（Codex ${status.version}）` : ''}。实际模型权限以翻译结果为准。`;
+  if (!status.available) return status.message || '当前版本暂不支持 ChatGPT 订阅登录。';
+  if (!status.connected) return status.message || '尚未连接 ChatGPT，请先登录并授权。';
+  if (!status.planEnabled) return status.message || '已登录 ChatGPT，但尚未授权 FastLingo 使用订阅。请选择重新授权。';
+  if (!status.modelAvailable) return status.message || '已授权使用 ChatGPT 订阅，但可用模型目录中未找到所选模型。请确认模型名称后刷新。';
+  return `已连接${status.accountLabel ? ` ${status.accountLabel}` : ' ChatGPT'}，已授权使用订阅，所选模型可用。`;
 }
 
 export function ProviderPresets({
@@ -44,7 +45,7 @@ export function ProviderPresets({
         <div className="modal-heading">
           <div>
             <h2>添加翻译服务</h2>
-            <p>{desktopCodex ? '接入自己的 API，或使用本机 Codex 的 GPT 订阅。' : '选择一个服务，或接入自己的 API。'}</p>
+            <p>{desktopCodex ? '接入自己的 API，或登录 ChatGPT 使用订阅。' : '选择一个服务，或接入自己的 API。'}</p>
           </div>
           <button className="icon-button" aria-label="关闭" onClick={onClose}>
             <X size={20} />
@@ -61,7 +62,7 @@ export function ProviderPresets({
                 <strong>{preset.name}</strong>
                 <small>
                   {preset.kind === 'codex'
-                    ? '使用已登录的 ChatGPT 订阅'
+                    ? 'Sign in with ChatGPT'
                     : preset.kind === 'openai'
                     ? 'OpenAI 兼容接口'
                     : preset.kind === 'anthropic'
@@ -96,11 +97,35 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+  const [showPlanNotice, setShowPlanNotice] = useState(false);
   const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
+  const [availableModels, setAvailableModels] = useState<NonNullable<CodexStatus['models']>>([]);
+  const [availableProfiles, setAvailableProfiles] = useState<NonNullable<CodexStatus['profiles']>>([]);
   const checkRef = useRef(0);
+  const signInRef = useRef(false);
+  const previousSignInStatus = useRef<CodexStatus | null>(null);
   const codex = draft.kind === 'codex';
   const unsupportedCodex = codex && !desktopCodex;
-  useEffect(() => () => { ++checkRef.current; }, []);
+  const cancelSignIn = () => {
+    ++checkRef.current;
+    setChecking(false);
+    setSigningIn(false);
+    if (signInRef.current) {
+      signInRef.current = false;
+      setCodexStatus(previousSignInStatus.current);
+      setAvailableModels(previousSignInStatus.current?.models || []);
+      onCodexStatus?.(draft, previousSignInStatus.current);
+      void import('../lib/codex').then(({ cancelChatGPTSignIn }) => cancelChatGPTSignIn()).catch(() => undefined);
+    }
+  };
+  useEffect(() => () => {
+    ++checkRef.current;
+    if (signInRef.current) {
+      signInRef.current = false;
+      void import('../lib/codex').then(({ cancelChatGPTSignIn }) => cancelChatGPTSignIn()).catch(() => undefined);
+    }
+  }, []);
   const checkCodex = async () => {
     const request = ++checkRef.current;
     setChecking(true);
@@ -113,12 +138,97 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
       const status = await getCodexStatus(draft.model.trim());
       if (request !== checkRef.current) return;
       setCodexStatus(status);
+      setAvailableModels(status.models || []);
+      setAvailableProfiles(status.profiles || []);
       onCodexStatus?.(draft, status);
     } catch (cause) {
       if (request === checkRef.current) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       if (request === checkRef.current) setChecking(false);
     }
+  };
+  const signIn = async (newAccount = false) => {
+    const request = ++checkRef.current;
+    setSigningIn(true);
+    signInRef.current = true;
+    previousSignInStatus.current = codexStatus;
+    setError('');
+    setCodexStatus(null);
+    setAvailableModels([]);
+    onCodexStatus?.(draft, null);
+    try {
+      if (!draft.model.trim()) throw new Error('请填写模型名称。');
+      const { signInChatGPT } = await import('../lib/codex');
+      if (request !== checkRef.current) return;
+      const status = await signInChatGPT(draft.model.trim(), newAccount);
+      if (request !== checkRef.current) return;
+      setCodexStatus(status);
+      setAvailableModels(status.models || []);
+      setAvailableProfiles(status.profiles || []);
+      onCodexStatus?.(draft, status);
+      if (status.connected && status.planEnabled && !hasAcknowledgedChatGPTPlan()) setShowPlanNotice(true);
+    } catch (cause) {
+      if (request === checkRef.current) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        setCodexStatus(previousSignInStatus.current);
+        setAvailableModels(previousSignInStatus.current?.models || []);
+        onCodexStatus?.(draft, previousSignInStatus.current);
+      }
+    } finally {
+      if (request === checkRef.current) {
+        signInRef.current = false;
+        setSigningIn(false);
+      }
+    }
+  };
+  const selectProfile = async (profileId: string) => {
+    const request = ++checkRef.current;
+    const previous = codexStatus;
+    setChecking(true);
+    setError('');
+    onCodexStatus?.(draft, null);
+    try {
+      const { selectChatGPTProfile } = await import('../lib/codex');
+      if (request !== checkRef.current) return;
+      const status = await selectChatGPTProfile(profileId, draft.model.trim());
+      if (request !== checkRef.current) return;
+      setCodexStatus(status);
+      setAvailableModels(status.models || []);
+      setAvailableProfiles(status.profiles || []);
+      onCodexStatus?.(draft, status);
+    } catch (cause) {
+      if (request === checkRef.current) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        onCodexStatus?.(draft, previous);
+      }
+    } finally {
+      if (request === checkRef.current) setChecking(false);
+    }
+  };
+  const disconnect = async () => {
+    const request = ++checkRef.current;
+    setChecking(true);
+    setError('');
+    onCodexStatus?.(draft, null);
+    try {
+      const { disconnectChatGPT } = await import('../lib/codex');
+      const status = await disconnectChatGPT();
+      if (request !== checkRef.current) return;
+      setCodexStatus(status);
+      setAvailableModels([]);
+      setAvailableProfiles(status.profiles || []);
+      onCodexStatus?.(draft, status);
+    } catch (cause) {
+      if (request === checkRef.current) setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (request === checkRef.current) setChecking(false);
+    }
+  };
+  const openUsage = async () => {
+    try {
+      const { openChatGPTUsage } = await import('../lib/codex');
+      await openChatGPTUsage();
+    } catch { setError('无法打开 ChatGPT 用量设置，请稍后重试。'); }
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -175,7 +285,7 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
         className="modal provider-modal"
         role="dialog"
         aria-modal="true"
-        aria-label={codex ? '本机 Codex 配置' : 'API 服务配置'}
+        aria-label={codex ? 'ChatGPT 订阅配置' : 'API 服务配置'}
         onSubmit={(event) => {
           void submit(event);
         }}
@@ -184,7 +294,7 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
         <div className="modal-heading">
           <div>
             <h2>{existing ? '编辑翻译服务' : '添加翻译服务'}</h2>
-            <p>{codex ? '使用本机已登录的 Codex，无需填写 API Key。' : '填写地址、模型和密钥即可开始。'}</p>
+            <p>{codex ? '通过官方登录授权使用你的 ChatGPT 订阅。' : '填写地址、模型和密钥即可开始。'}</p>
           </div>
           <button
             className="icon-button"
@@ -240,13 +350,14 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
             autoCorrect="off"
             spellCheck={false}
             value={draft.model}
+            list={codex ? 'chatgpt-available-models' : undefined}
             onChange={(event) => {
               const next = { ...draft, model: event.target.value };
               setDraft(next);
               if (codex) {
-                ++checkRef.current;
-                setChecking(false);
+                cancelSignIn();
                 setCodexStatus(null);
+                setShowPlanNotice(false);
                 setError('');
                 onCodexStatus?.(next, null);
               }
@@ -254,15 +365,45 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
             placeholder="填写服务支持的模型名称"
             required
           />
+          {codex && availableModels.length > 0 && <datalist id="chatgpt-available-models">
+            {availableModels.map(model => <option key={model.slug} value={model.slug}>{model.displayName}</option>)}
+          </datalist>}
         </label>
         {codex ? (
-          <section className="codex-connection" aria-label="Codex 连接检测" aria-busy={checking}>
-            <p>{unsupportedCodex ? desktopOnly : '请先在本机 Codex 中通过 ChatGPT 订阅登录。FastLingo 不读取或保存你的 Codex 登录凭据。'}</p>
-            <button className="button secondary small" type="button" disabled={checking || saving || unsupportedCodex} onClick={() => { void checkCodex(); }}>
-              {checking && <LoaderCircle size={15} className="spin" />}{checking ? '正在检测' : '检测连接'}
-            </button>
+          <section className="codex-connection" aria-label="ChatGPT 连接" aria-busy={checking || signingIn}>
+            <p>{unsupportedCodex ? desktopOnly : '符合条件的翻译请求将使用你的 ChatGPT 套餐或积分余额。无需 API Key，也无需安装 Codex。'}</p>
+            {availableProfiles.length > 0 && <label className="form-label">
+              ChatGPT 账号
+              <select aria-label="ChatGPT 账号" value={availableProfiles.find(profile => profile.active)?.id || ''} disabled={checking || signingIn || saving || unsupportedCodex} onChange={event => { void selectProfile(event.target.value); }}>
+                {!availableProfiles.some(profile => profile.active) && <option value="" disabled>选择账号</option>}
+                {availableProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.label}{profile.connected ? '' : '（需重新登录）'}</option>)}
+              </select>
+            </label>}
+            {signingIn ? <div className="chatgpt-actions">
+              <span role="status"><LoaderCircle size={15} className="spin" /> 请在系统浏览器中完成 ChatGPT 登录和授权…</span>
+              <button className="button secondary small" type="button" onClick={cancelSignIn}>取消登录</button>
+            </div> : <div className="chatgpt-actions">
+              {!codexStatus?.connected && <button className="button chatgpt-sign-in" type="button" disabled={checking || saving || unsupportedCodex} onClick={() => { void signIn(); }}>Continue with ChatGPT</button>}
+              <button className="button secondary small" type="button" disabled={checking || saving || unsupportedCodex} onClick={() => { void checkCodex(); }}>
+                {checking && <LoaderCircle size={15} className="spin" />}{checking ? '正在刷新' : '刷新连接'}
+              </button>
+              {codexStatus?.connected && <>
+                <button className="button secondary small" type="button" disabled={checking || saving} onClick={() => { void signIn(); }}>重新授权</button>
+                <button className="text-button danger" type="button" disabled={checking || saving} onClick={() => { void disconnect(); }}>断开连接</button>
+              </>}
+              {availableProfiles.length > 0 && <button className="text-button" type="button" disabled={checking || saving} onClick={() => { void signIn(true); }}>添加账号</button>}
+              {!unsupportedCodex && <button className="text-button" type="button" onClick={() => { void openUsage(); }}>管理用量</button>}
+            </div>}
             {codexStatus && <p className="codex-status" role="status">{codexStatusMessage(codexStatus)}</p>}
-            {!unsupportedCodex && <small>检测仅查询登录状态和模型目录，不发送翻译请求。Codex 会在本次翻译完成后返回译文。</small>}
+            {!unsupportedCodex && <small>刷新仅检查连接、授权和可用模型，不发送翻译请求。译文会逐步显示。</small>}
+            {showPlanNotice && <div className="chatgpt-plan-notice" role="alertdialog" aria-modal="true" aria-label="正在使用 ChatGPT 套餐">
+              <strong>正在使用 ChatGPT 套餐</strong>
+              <p>FastLingo 中符合条件的翻译请求会使用你的 ChatGPT 套餐或积分余额。你可以随时在 ChatGPT 设置中管理用量。</p>
+              <div className="chatgpt-actions">
+                <button className="text-button" type="button" onClick={() => { void openUsage(); }}>管理用量</button>
+                <button className="button primary small" type="button" onClick={() => { acknowledgeChatGPTPlan(); setShowPlanNotice(false); }}>知道了</button>
+              </div>
+            </div>}
           </section>
         ) : <><label className="form-label">
           API Key{' '}
@@ -335,7 +476,7 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
             <button className="button secondary" type="button" onClick={onClose} disabled={saving}>
               取消
             </button>
-            <button className="button primary" type="submit" disabled={saving || checking || unsupportedCodex}>
+            <button className="button primary" type="submit" disabled={saving || checking || signingIn || showPlanNotice || unsupportedCodex}>
               {saving ? <LoaderCircle size={16} className="spin" /> : <Check size={16} />}保存配置
             </button>
           </div>

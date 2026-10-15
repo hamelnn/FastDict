@@ -1,6 +1,6 @@
 [package]
 name = "fastdict"
-version = "0.3.1"
+version = "0.4.0"
 description = "A lightweight screenshot and clipboard translator"
 authors = ["FastLingo"]
 edition = "2021"
@@ -26,7 +26,15 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "net", "io-util", "sync", "macros"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+jsonwebtoken = "9.3"
+sha2 = "0.10"
+rand = "0.8"
+uuid = { version = "1", features = ["v4"] }
+aes-gcm = "0.10"
+fs2 = "0.4"
+zeroize = "1"
 xcap = "0.9.8"
 image = { version = "0.25", default-features = false, features = ["png"] }
 base64 = "0.22"
