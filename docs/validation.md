@@ -4,7 +4,7 @@
 
 ## 0.2.0 移动端验证
 
-- `npm run check`：38 项核心测试、18 项构建脚本测试、TypeScript 与生产构建通过。
+- `npm run check`：38 项核心测试、19 项构建脚本测试、TypeScript 与生产构建通过。
 - `npm run test:e2e`：39 项完整交互测试通过，新增两端选图、取消选图、真实 OCR、粘贴、流式结果、分享、后台停止与恢复界面检查。
 - Windows GNU `cargo check --release` 通过；0.2.0 的 [桌面 CI](https://github.com/hamelnn/FastDict/actions/runs/38689725918) 已完成 Windows / macOS 原生检查、测试与编译。
 - [Android ARM64 构建](https://github.com/hamelnn/FastDict/actions/runs/38689556715) 已通过，生成 `FastDict-Android-0.2.0-arm64-v8a-debug.apk`，包名、版本、架构、debug 标识及 APK v2 签名验证通过。尚未设备安装验收。

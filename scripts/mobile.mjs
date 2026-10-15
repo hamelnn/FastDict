@@ -40,6 +40,19 @@ export function configureAndroidSdk(gradle) {
   return gradle.replace(template, (_, indent) => `${indent}compileSdk {\n${indent}    version = release(37) { minorApiLevel = 0 }\n${indent}}`);
 }
 
+export function mobileBuildEnvironment(platform, env) {
+  if (platform !== 'android') return env;
+  // Keep the Android debug signing variant while avoiding large Rust DWARF
+  // sections. Tauri forwards CARGO_* through its mobile build options server.
+  // This copy is passed only to `build`, never the interactive `dev` command.
+  return {
+    ...env,
+    CARGO_PROFILE_DEV_DEBUG: '0',
+    CARGO_PROFILE_DEV_STRIP: 'symbols',
+    CARGO_PROFILE_DEV_OPT_LEVEL: 's',
+  };
+}
+
 async function prepareAndroidProject(project) {
   const path = join(project, 'app/build.gradle.kts');
   const original = await readFile(path, 'utf8');
@@ -81,8 +94,8 @@ async function exportAndroid(info, config, env) {
   await mkdir(output, { recursive: true });
   const name = `FastDict-Android-${config.version}-${info.abi}-debug.apk`;
   await copyFile(valid[0], join(output, name));
-  await writeManifest(output, name, { version: config.version, target: info.target, abi: info.abi, kind: 'debug-apk', signing: 'android-debug', deviceTest: 'not_run' });
-  await writeFile(join(output, 'README-Android.txt'), `FastDict ${config.version} Android 测试版\n\n安装 ${name}。此包使用 Android debug 签名，仅用于测试，不是商店发布版。\n需要 Android 7.0 (API 24) 或更新系统。\n在其他 App 截图后，打开 FastDict，选择截图后识别并翻译。\n也可主动粘贴已复制的文字。API Key 使用 Android Keystore 保护。\n不同机器或 CI 运行使用的 debug 密钥可能不同；签名不匹配时无法覆盖安装。\n此清单只证明编译与包校验通过，实际设备功能仍需验证。\n`, 'utf8');
+  await writeManifest(output, name, { version: config.version, target: info.target, abi: info.abi, kind: 'debug-apk', signing: 'android-debug', rustProfile: 'optimized-dev', rustOptions: { debug: 0, strip: 'symbols', optLevel: 's' }, deviceTest: 'not_run' });
+  await writeFile(join(output, 'README-Android.txt'), `FastDict ${config.version} Android 测试版\n\n安装 ${name}。此包使用 Android debug 签名，仅用于测试，不是商店发布版。\nRust 原生库按体积优化并在编译时去除调试符号，以减小安装包。\n需要 Android 7.0 (API 24) 或更新系统。\n在其他 App 截图后，打开 FastDict，选择截图后识别并翻译。\n也可主动粘贴已复制的文字。API Key 使用 Android Keystore 保护。\n不同机器或 CI 运行使用的 debug 密钥可能不同；签名不匹配时无法覆盖安装。\n此清单只证明编译与包校验通过，实际设备功能仍需验证。\n`, 'utf8');
   await copyFile(join(root, 'THIRD_PARTY_NOTICES.md'), join(output, 'THIRD_PARTY_NOTICES.md'));
   process.stdout.write(`Android 测试 APK 已生成并校验：${join(output, name)}\n`);
 }
@@ -146,8 +159,9 @@ async function main() {
   }
   const args = [tauri, options.platform, 'build', '--debug', '--target', options.target, '--ci'];
   args.push(options.platform === 'android' ? '--apk' : '--no-sign');
-  run(process.execPath, args, env);
-  await (options.platform === 'android' ? exportAndroid : exportIos)(info, config, env);
+  const buildEnv = mobileBuildEnvironment(options.platform, env);
+  run(process.execPath, args, buildEnv);
+  await (options.platform === 'android' ? exportAndroid : exportIos)(info, config, buildEnv);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

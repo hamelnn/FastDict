@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mobileEnvironment, androidPreflight, iosPreflight } from '../mobile-preflight.mjs';
-import { parseMobileArgs, verifyAndroidPackage, configureAndroidSdk } from '../mobile.mjs';
+import { parseMobileArgs, verifyAndroidPackage, configureAndroidSdk, mobileBuildEnvironment } from '../mobile.mjs';
 
 test('mobile build defaults clearly distinguish a debug phone APK and simulator app', () => {
   assert.deepEqual(parseMobileArgs(['android', 'build'], 'arm64'), { platform: 'android', action: 'build', target: 'aarch64', help: false });
@@ -62,6 +62,19 @@ test('generated Android projects use the published API 37.0 SDK and retain other
   assert.match(configured, /namespace = "app.fastdict.translate"/);
   assert.equal(configureAndroidSdk(configured), configured);
   assert.throws(() => configureAndroidSdk('android { compileSdk = 40 }'), /预期模板不同/);
+});
+
+test('Android packaging optimizes Rust without changing the caller or iOS environment', () => {
+  const original = { PATH: '/tools', CARGO_PROFILE_DEV_DEBUG: '2', CARGO_PROFILE_DEV_OPT_LEVEL: '0' };
+  const android = mobileBuildEnvironment('android', original);
+  assert.equal(android.CARGO_PROFILE_DEV_DEBUG, '0');
+  assert.equal(android.CARGO_PROFILE_DEV_STRIP, 'symbols');
+  assert.equal(android.CARGO_PROFILE_DEV_OPT_LEVEL, 's');
+  assert.equal(android.PATH, '/tools');
+  assert.equal(original.CARGO_PROFILE_DEV_DEBUG, '2');
+  assert.equal(original.CARGO_PROFILE_DEV_OPT_LEVEL, '0');
+  assert.equal(original.CARGO_PROFILE_DEV_STRIP, undefined);
+  assert.equal(mobileBuildEnvironment('ios', original), original);
 });
 
 test('actual iOS entry point fails clearly on Windows; help works without a mobile SDK', { skip: process.platform !== 'win32' }, () => {

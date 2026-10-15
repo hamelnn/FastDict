@@ -34,6 +34,8 @@ npm run android:build
 
 `npm run android` 用于原生开发。构建默认为 ARM64 debug APK，输出 `release/android/`，同时校验包名、版本、架构和签名并生成 SHA-256 清单。模拟器可按其架构传 `-- --target=x86_64`。初始化不会覆盖已有原生工程，脚本不会自行安装 SDK。
 
+`android:build` 保留 Android debug 签名，同时仅在打包子进程中将 Rust dev profile 设为 `debug=0`、`strip=symbols`、`opt-level=s`，减小原生库体积；清单记为 `rustProfile: optimized-dev`。`npm run android` 的交互调试与 iOS / 桌面构建不受此设置影响。
+
 GitHub Actions 可手动运行 **Build Android test APK**。下载该次运行的产物，解压后安装 `.apk`。Debug 签名仅供测试；不同构建环境的签名可能不同，可能无法直接覆盖安装。正式商店分发需要固定发行密钥。
 
 ## iOS 构建
