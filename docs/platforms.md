@@ -10,7 +10,7 @@
 | 后台入口与浮动面板 | 系统托盘 | 菜单栏 / Dock | 应用内面板 | 应用内面板 |
 | 系统图片选择 / 译文分享 | 图片导入 / 复制 | 图片导入 / 复制 | 已实现 | 已实现 |
 | API Key 保存 | 系统凭据库 | Keychain | Keystore 加密保存 | Keychain |
-| 原生构建 | 已有本地 Release 基线 | CI 编译通过 | ARM64 debug APK 及签名校验通过 | 模拟器编译、安装启动通过 |
+| 原生构建 | 安装程序、便携 ZIP 已生成并校验 | 通用 DMG / 应用 ZIP 已生成并校验 | ARM64 debug APK 及签名校验通过 | 模拟器编译、安装启动通过 |
 | 设备验证 | 已有启动、截图显示/取消、退出基线 | 待验证 | 待验证 | 待验证 |
 
 Windows 与 macOS 的使用、构建说明分别见 [Windows](windows.md) 和 [macOS](macos.md)。Linux 尚未列为验收平台。

@@ -9,6 +9,8 @@
 - Windows GNU `cargo check --release` 通过；0.2.0 的 [完整 CI](https://github.com/hamelnn/FastDict/actions/runs/38691193513) 已成功完成前端检查，以及 Windows / macOS 原生检查、测试与编译。
 - [Android ARM64 优化构建](https://github.com/hamelnn/FastDict/actions/runs/38691196346) 已通过，生成 `FastDict-Android-0.2.0-arm64-v8a-debug.apk`，包名、版本、架构、debug 标识及 APK v2 签名验证通过。APK 为 29,371,560 字节，SHA-256 为 `fc7b863d178401935f96d03767747409a612bab08acbe93e4a81e4c774b8f143`。尚未设备安装验收。
 - 安卓包从 194,063,104 字节缩小约 85%。已直接检查最终 ELF：原生库为 22,055,936 字节，`.debug_*` 与 `.symtab` 已移除，动态符号表仍存在。构建清单记录 `optimized-dev` 及优化选项。
+- Windows 0.2.0 已生成 NSIS 安装程序与便携 ZIP，实际版本资源、依赖及输出哈希已核对；安装程序尚未在用户系统执行安装。
+- [macOS 通用包构建](https://github.com/hamelnn/FastDict/actions/runs/38749467816) 已生成 `.app.zip` 与 `.dmg`，通过 arm64 / x86_64 双架构、ad-hoc 签名及 DMG 完整性检查，尚未执行真机操作验收。
 - [iOS 模拟器构建与启动](https://github.com/hamelnn/FastDict/actions/runs/38689728876) 已通过：Swift / Rust 编译、平台与架构检查、应用包导出，以及 iPhone 17 Pro / iOS 26.5 模拟器安装启动。已人工检查 1206 × 2622 原始截图，主界面和底部导航正常显示；顶部有系统首次启动通知。该包不能安装到 iPhone。
 - Android 手机预览使用模拟原生接口，已检查布局；iOS / Android 均没有真机测试结论。
 - 0.1.2 的 [GitHub CI](https://github.com/hamelnn/FastDict/actions/runs/38687373078) 已完成 macOS 原生检查、测试与编译；不包含通用安装包打包或设备操作。
@@ -47,7 +49,7 @@ Windows 曾收到白屏且无法退出的反馈，重启后未复现当时故障
 ## 待验收
 
 - **Windows**：真实快捷键 → 框选 → OCR → API → 侧栏的完整翻译流程，以及多显示器和不同缩放比例。
-- **macOS**：通用 `.app` / `.dmg`、首次授权、多屏、Retina、Spaces、Dock、Keychain 及真实翻译。
+- **macOS**：真机安装启动、首次授权、多屏、Retina、Spaces、Dock、Keychain 及真实翻译。
 - **Android**：设备安装、选图、剪贴板、分享、Keystore、OCR 与生命周期。
 - **iOS**：模拟器与设备上的选图、剪贴板、分享、Keychain、OCR 与生命周期；现有模拟器验收只覆盖安装启动与画面。
 - **所有平台**：真实服务商联调、冷启动与热态性能基准、正式签名和发行流程。

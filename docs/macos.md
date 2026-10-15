@@ -1,6 +1,8 @@
 # macOS 版
 
-已实现菜单栏、Mac 快捷键、权限引导、Keychain 和 Apple Silicon / Intel 通用包构建流程。0.1.2 已通过 GitHub macOS 原生检查、测试与编译；尚未生成通用 `.app` / `.dmg` 或完成真机操作验收。
+已实现菜单栏、Mac 快捷键、权限引导和 Keychain。0.2.0 已通过 [macOS 通用包构建](https://github.com/hamelnn/FastDict/actions/runs/38749467816)，生成并校验 Apple Silicon / Intel 通用 `.app.zip` 和 `.dmg`；真机操作流程尚待验收。
+
+下载见 [GitHub Release](https://github.com/hamelnn/FastDict/releases/tag/v0.2.0)。当前为 ad-hoc 签名的测试版，未进行 Apple 公证。
 
 ## 使用
 
@@ -46,7 +48,7 @@ npm run macos:build -- --target=x86_64-apple-darwin
 
 ## GitHub Actions 与签名
 
-可在仓库 Actions 中手动运行 **Build macOS universal app**，下载该次运行的构建产物。工作流不会发布 Release，当前尚未远程执行。
+可在仓库 Actions 中手动运行 **Build macOS universal app**，下载该次运行的构建产物。工作流只构建并上传 Actions 产物；供用户下载的文件另行发布至 GitHub Release。0.2.0 已完成该流程。
 
 默认使用 ad-hoc 签名，不代表 Apple 认证发行或已公证。已有 Developer ID 时，可通过 `APPLE_SIGNING_IDENTITY` 指定签名身份；正式发行还需完成公证。参见 [Tauri 签名说明](https://v2.tauri.app/distribute/sign/macos/)。
 

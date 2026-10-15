@@ -4,6 +4,8 @@
 
 React + TypeScript 界面，Tauri 2 原生外壳，复用系统 WebView。
 
+各平台构建产物集中在 [FastDict 0.2.0 下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.2.0)。包含 Windows、macOS、Android 和 iOS 模拟器版本，以及安装说明和 SHA-256 校验清单；iPhone 真机安装需要另行配置 Apple 签名。
+
 ## 功能
 
 - **截图翻译**：桌面直接框选鼠标所在屏幕，松开即识别并翻译。
@@ -17,8 +19,8 @@ React + TypeScript 界面，Tauri 2 原生外壳，复用系统 WebView。
 
 | 平台 | 当前状态 | 使用与构建 |
 | --- | --- | --- |
-| Windows x64 | 已有本地构建、启动、截图显示/取消及退出验证基线 | [Windows 说明](docs/windows.md) |
-| macOS | 原生检查、测试与编译已通过 CI，通用安装包和真机流程待验收 | [macOS 说明](docs/macos.md) |
+| Windows x64 | 已生成 0.2.0 安装程序和便携 ZIP，安装流程待设备验收 | [Windows 说明](docs/windows.md) |
+| macOS | 已生成并校验 Apple Silicon / Intel 通用 DMG 和应用 ZIP，真机流程待验收 | [macOS 说明](docs/macos.md) |
 | iOS | 模拟器编译、安装启动与画面检查通过；真机签名及功能待验收 | [移动端说明](docs/mobile.md) |
 | Android ARM64 | 已生成并校验 debug APK，设备功能待验收 | [移动端说明](docs/mobile.md) |
 
