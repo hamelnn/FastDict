@@ -6,9 +6,10 @@
 
 - `npm run check`：38 项核心测试、18 项构建脚本测试、TypeScript 与生产构建通过。
 - `npm run test:e2e`：39 项完整交互测试通过，新增两端选图、取消选图、真实 OCR、粘贴、流式结果、分享、后台停止与恢复界面检查。
-- Windows GNU `cargo check --release` 通过。Android 原生构建执行中。
-- [iOS 模拟器构建](https://github.com/hamelnn/FastDict/actions/runs/38689149051) 已通过：Swift / Rust 编译、模拟器平台与架构检查、应用包导出成功。此包不能安装到 iPhone。
-- iOS / Android 预览使用模拟原生接口，已检查手机布局；没有真机测试结论。
+- Windows GNU `cargo check --release` 通过；0.2.0 的 [桌面 CI](https://github.com/hamelnn/FastDict/actions/runs/38689725918) 已完成 Windows / macOS 原生检查、测试与编译。
+- [Android ARM64 构建](https://github.com/hamelnn/FastDict/actions/runs/38689556715) 已通过，生成 `FastDict-Android-0.2.0-arm64-v8a-debug.apk`，包名、版本、架构、debug 标识及 APK v2 签名验证通过。尚未设备安装验收。
+- [iOS 模拟器构建与启动](https://github.com/hamelnn/FastDict/actions/runs/38689728876) 已通过：Swift / Rust 编译、平台与架构检查、应用包导出，以及 iPhone 17 Pro / iOS 26.5 模拟器安装启动。已人工检查 1206 × 2622 原始截图，主界面和底部导航正常显示；顶部有系统首次启动通知。该包不能安装到 iPhone。
+- Android 手机预览使用模拟原生接口，已检查布局；iOS / Android 均没有真机测试结论。
 - 0.1.2 的 [GitHub CI](https://github.com/hamelnn/FastDict/actions/runs/38687373078) 已完成 macOS 原生检查、测试与编译；不包含通用安装包打包或设备操作。
 
 ## 0.1.2 优化验证
@@ -46,7 +47,8 @@ Windows 曾收到白屏且无法退出的反馈，重启后未复现当时故障
 
 - **Windows**：真实快捷键 → 框选 → OCR → API → 侧栏的完整翻译流程，以及多显示器和不同缩放比例。
 - **macOS**：通用 `.app` / `.dmg`、首次授权、多屏、Retina、Spaces、Dock、Keychain 及真实翻译。
-- **Android / iOS**：原生构建、模拟器与设备上的图片导入、剪贴板、OCR 和生命周期。
+- **Android**：设备安装、选图、剪贴板、分享、Keystore、OCR 与生命周期。
+- **iOS**：模拟器与设备上的选图、剪贴板、分享、Keychain、OCR 与生命周期；现有模拟器验收只覆盖安装启动与画面。
 - **所有平台**：真实服务商联调、冷启动与热态性能基准、正式签名和发行流程。
 
 构建产物不随源码提交；原生 CI 编译、安装包校验与设备功能验收分别记录。

@@ -19,7 +19,8 @@ React + TypeScript 界面，Tauri 2 原生外壳，复用系统 WebView。
 | --- | --- | --- |
 | Windows x64 | 已有本地构建、启动、截图显示/取消及退出验证基线 | [Windows 说明](docs/windows.md) |
 | macOS | 原生检查、测试与编译已通过 CI，通用安装包和真机流程待验收 | [macOS 说明](docs/macos.md) |
-| Android / iOS | 已实现手机界面、原生选图与分享；原生构建状态见验证记录 | [移动端说明](docs/mobile.md) |
+| iOS | 模拟器编译、安装启动与画面检查通过；真机签名及功能待验收 | [移动端说明](docs/mobile.md) |
+| Android ARM64 | 已生成并校验 debug APK，设备功能待验收 | [移动端说明](docs/mobile.md) |
 
 仓库提供源码；`release/` 为本地构建输出，不随源码提交。完整截图到真实 API 的桌面流程仍需设备验收，详见 [验证范围](docs/validation.md)。
 

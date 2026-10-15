@@ -54,3 +54,5 @@ npm run ios:build
 ## 验证边界
 
 手机 UI 与流程测试使用模拟原生接口、真实本地 Tesseract OCR 和模拟 API 响应。原生构建通过也不等于已经验证相册、分享、Keychain / Keystore 与真实设备性能。最新执行记录见 [验证范围](validation.md)。
+
+2026-10-15 已生成 0.2.0 的 Android ARM64 debug APK 和 Apple Silicon iOS Simulator `.app.zip`。iOS 已在 iPhone 17 Pro / iOS 26.5 模拟器安装启动并检查画面。两端真机功能尚未验收。
