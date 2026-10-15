@@ -40,7 +40,12 @@ jobs:
         run: npm run ios:init
       - name: Build unsigned simulator app
         run: npm run ios:build
+      - name: Launch on a disposable iPhone simulator and capture the screen
+        env:
+          FASTDICT_IOS_SMOKE: 'true'
+        run: node scripts/ios-smoke.mjs
       - name: Upload simulator app (cannot install on an iPhone)
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: FastDict-iOS-simulator-${{ github.run_number }}
@@ -49,5 +54,7 @@ jobs:
             release/ios/manifest-*.json
             release/ios/README-iOS.txt
             release/ios/THIRD_PARTY_NOTICES.md
+            release/ios/simulator-launch.png
+            release/ios/simulator-smoke.json
           if-no-files-found: error
           retention-days: 14
