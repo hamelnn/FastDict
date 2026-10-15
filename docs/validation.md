@@ -4,9 +4,10 @@
 
 ## 0.2.0 移动端验证
 
-- `npm run check`：38 项核心测试、17 项构建脚本测试、TypeScript 与生产构建通过。
+- `npm run check`：38 项核心测试、18 项构建脚本测试、TypeScript 与生产构建通过。
 - `npm run test:e2e`：39 项完整交互测试通过，新增两端选图、取消选图、真实 OCR、粘贴、流式结果、分享、后台停止与恢复界面检查。
-- Windows GNU `cargo check --release` 通过。Android 和 iOS 原生构建工作流已准备，执行结果待补充。
+- Windows GNU `cargo check --release` 通过。Android 原生构建执行中。
+- [iOS 模拟器构建](https://github.com/hamelnn/FastDict/actions/runs/38689149051) 已通过：Swift / Rust 编译、模拟器平台与架构检查、应用包导出成功。此包不能安装到 iPhone。
 - iOS / Android 预览使用模拟原生接口，已检查手机布局；没有真机测试结论。
 - 0.1.2 的 [GitHub CI](https://github.com/hamelnn/FastDict/actions/runs/38687373078) 已完成 macOS 原生检查、测试与编译；不包含通用安装包打包或设备操作。
 

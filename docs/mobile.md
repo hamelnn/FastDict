@@ -21,7 +21,7 @@ iOS 使用 Keychain 保存密钥。Android 使用 Keystore 的 AES-GCM 密钥加
 
 ## Android 构建
 
-运行最低 Android 7 / API 24。开发需要 Node.js 22.12+、Rust 1.90+、JDK 17+（CI 使用 21）、SDK Platform 37、Build-Tools 37 和 NDK（CI 使用 28.2.13676358）。编译 SDK 与手机最低版本不同。
+运行最低 Android 7 / API 24。开发需要 Node.js 22.12+、Rust 1.90+、JDK 17+（CI 使用 21）、SDK Platforms 36 和 37.0、Build-Tools 37 和 NDK（CI 使用 28.2.13676358）。编译 SDK 与手机最低版本不同。
 
 安装相应工具后设置 `JAVA_HOME`、`ANDROID_HOME`、`NDK_HOME`，准备 `aarch64-linux-android` Rust target：
 

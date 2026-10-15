@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mobileEnvironment, androidPreflight, iosPreflight } from '../mobile-preflight.mjs';
-import { parseMobileArgs, verifyAndroidPackage } from '../mobile.mjs';
+import { parseMobileArgs, verifyAndroidPackage, configureAndroidSdk } from '../mobile.mjs';
 
 test('mobile build defaults clearly distinguish a debug phone APK and simulator app', () => {
   assert.deepEqual(parseMobileArgs(['android', 'build'], 'arm64'), { platform: 'android', action: 'build', target: 'aarch64', help: false });
@@ -53,6 +53,15 @@ test('a matching APK must have the current package, version, exactly one ABI and
 test('iOS preflight rejects a missing simulator runtime instead of starting a large download', () => {
   const run = (command, args) => ({ status: 0, stdout: args.includes('runtimes') ? '{"runtimes":[]}' : '/tool' });
   assert.throws(() => iosPreflight({ platform: 'darwin', run }), /Simulator Runtime/);
+});
+
+test('generated Android projects use the published API 37.0 SDK and retain other settings', () => {
+  const original = 'android {\n    compileSdk = 37\n    namespace = "app.fastdict.translate"\n}\n';
+  const configured = configureAndroidSdk(original);
+  assert.match(configured, /version = release\(37\) \{ minorApiLevel = 0 \}/);
+  assert.match(configured, /namespace = "app.fastdict.translate"/);
+  assert.equal(configureAndroidSdk(configured), configured);
+  assert.throws(() => configureAndroidSdk('android { compileSdk = 40 }'), /预期模板不同/);
 });
 
 test('actual iOS entry point fails clearly on Windows; help works without a mobile SDK', { skip: process.platform !== 'win32' }, () => {

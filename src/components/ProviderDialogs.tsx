@@ -248,7 +248,7 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove }
                 : isNativeMac
               ? 'macOS 钥匙串存储'
               : isNative
-                ? '系统保险库存储 · Android 仅本次会话'
+                ? operatingSystem === 'windows' ? 'Windows 系统凭据库存储' : '仅本次应用会话保存'
                 : '仅当前浏览器会话保存，刷新后需重新输入'}
           </span>
         </div>

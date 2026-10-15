@@ -31,6 +31,22 @@ export function verifyAndroidPackage(badging, { identifier, version, abi }) {
   if (!/^application-debuggable(?:\s|$)/m.test(badging)) throw new Error('预期生成 debug 测试 APK，实际包类型不一致。');
 }
 
+export function configureAndroidSdk(gradle) {
+  // API 37 is published as android-37.0. An integer compileSdk in Tauri's
+  // template resolves android-37 instead, which does not exist in Google's SDK.
+  if (/compileSdk\s*\{\s*version\s*=\s*release\(37\)\s*\{\s*minorApiLevel\s*=\s*0\s*\}\s*\}/.test(gradle)) return gradle;
+  const template = /^([ \t]*)compileSdk\s*=\s*37\s*$/m;
+  if (!template.test(gradle)) throw new Error('Android compileSdk 配置与预期模板不同，请检查 app/build.gradle.kts 的 API 37.0 配置。');
+  return gradle.replace(template, (_, indent) => `${indent}compileSdk {\n${indent}    version = release(37) { minorApiLevel = 0 }\n${indent}}`);
+}
+
+async function prepareAndroidProject(project) {
+  const path = join(project, 'app/build.gradle.kts');
+  const original = await readFile(path, 'utf8');
+  const configured = configureAndroidSdk(original);
+  if (configured !== original) await writeFile(path, configured, 'utf8');
+}
+
 function run(command, args, env, capture = false) {
   const result = spawnSync(command, args, { cwd: root, env, stdio: capture ? 'pipe' : 'inherit', encoding: 'utf8', windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
   if (result.error || result.status !== 0) throw new Error(`${basename(command)} 执行失败（${result.status ?? result.error?.code}）。请查看构建输出。`);
@@ -118,10 +134,12 @@ async function main() {
   if (options.action === 'init') {
     if (existsSync(project) && (await readdir(project)).length) throw new Error(`原生工程已存在：${project}。请直接运行 ${options.platform}:build，避免覆盖本地修改。`);
     run(process.execPath, [tauri, options.platform, 'init', '--ci', '--skip-targets-install'], env);
+    if (options.platform === 'android') await prepareAndroidProject(project);
     process.stdout.write(`${options.platform} 原生工程已初始化。\n`);
     return;
   }
   if (!existsSync(project) || !(await stat(project)).isDirectory()) throw new Error(`请先运行 npm run ${options.platform}:init。`);
+  if (options.platform === 'android') await prepareAndroidProject(project);
   if (options.action === 'dev') {
     run(process.execPath, [tauri, options.platform, 'dev'], env);
     return;

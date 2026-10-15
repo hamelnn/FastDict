@@ -1,6 +1,6 @@
 # macOS 版
 
-已实现菜单栏、Mac 快捷键、权限引导、Keychain 和 Apple Silicon / Intel 通用包构建流程。**当前仅交付适配源码，尚未生成或真机验证 `.app` / `.dmg`。**
+已实现菜单栏、Mac 快捷键、权限引导、Keychain 和 Apple Silicon / Intel 通用包构建流程。0.1.2 已通过 GitHub macOS 原生检查、测试与编译；尚未生成通用 `.app` / `.dmg` 或完成真机操作验收。
 
 ## 使用
 

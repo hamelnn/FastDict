@@ -1,7 +1,7 @@
 import { ImagePlus, Monitor, MoreHorizontal, Plus, ShieldCheck, Smartphone, Zap } from 'lucide-react';
 import type { Preferences, Provider } from '../types';
 import { OCR_LANGUAGES } from '../lib/catalog';
-import { isMobile, isNative, isNativeMac, operatingSystem, shortcutLabels } from '../lib/platform';
+import { isMobile, isNative, isNativeMac, isNativeWindows, operatingSystem, shortcutLabels } from '../lib/platform';
 import { MacScreenPermissionPanel, type MacScreenPermissionState } from './MacScreenPermission';
 
 interface Props {
@@ -69,8 +69,9 @@ export function PreferencesView({
                 ? 'API Key 由 Android 系统密钥库加密保存在本机。'
                 : isNativeMac
               ? 'API Key 保存于 macOS 系统钥匙串。'
-              : isNative
-                ? 'Windows / macOS / iOS 使用系统保险库；Android 密钥仅保留在本次会话。'
+              : isNativeWindows
+                ? 'API Key 保存于 Windows 系统凭据库。'
+                : isNative ? 'API Key 仅保留在本次应用会话。'
                 : '浏览器预览中的密钥仅保留在当前会话。安装原生应用可使用系统保险库。'}
           </span>
         </div>

@@ -73,7 +73,8 @@ export function androidPreflight({ target = 'aarch64', env = process.env, platfo
   const missing = [];
   const sdk = env.ANDROID_HOME || env.ANDROID_SDK_ROOT;
   // The locked Tauri CLI 2.12.2 Android template targets API 37.
-  if (!sdk || !exists(join(sdk, 'platforms/android-37/android.jar'))) missing.push('Android SDK Platform 37（ANDROID_HOME）');
+  if (!sdk || !exists(join(sdk, 'platforms/android-37.0/android.jar'))) missing.push('Android SDK Platform 37.0（ANDROID_HOME）');
+  if (!sdk || !exists(join(sdk, 'platforms/android-36/android.jar'))) missing.push('Android SDK Platform 36（原生插件依赖）');
   if (!sdk || !exists(join(sdk, 'platform-tools', `adb${executable}`))) missing.push('Android SDK Platform-Tools');
   const buildToolsVersion = sdk && latestDirectory(join(sdk, 'build-tools'), exists, list);
   const buildTools = buildToolsVersion && join(sdk, 'build-tools', buildToolsVersion);
