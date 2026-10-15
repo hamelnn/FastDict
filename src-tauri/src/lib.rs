@@ -7,6 +7,8 @@ mod chatgpt;
 #[cfg(desktop)]
 mod chatgpt_auth;
 #[cfg(desktop)]
+mod browser;
+#[cfg(desktop)]
 mod capture;
 #[cfg(desktop)]
 mod macos_capture;
@@ -517,6 +519,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init());
     #[cfg(desktop)]
     let builder = builder
+        .plugin(tauri_plugin_opener::init())
         .manage(desktop::DesktopState::default())
         .manage(desktop_preferences::PreferencesState::default())
         .manage(chatgpt::ChatGPTState::default())

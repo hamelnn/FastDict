@@ -549,23 +549,12 @@ mod native {
         }
         Ok(url)
     }
-    fn open_authorization_url(url: &Url) -> Result<(), String> {
+    async fn open_authorization_url(app: &AppHandle, url: &Url) -> Result<(), String> {
         if url.scheme() != "https" || url.host_str() != Some("auth.openai.com") || url.path() != "/api/accounts/authorize"
             || url.port_or_known_default() != Some(443) || !url.username().is_empty() || url.password().is_some() || url.fragment().is_some() {
             return Err(INVALID_IDENTITY.into());
         }
-        #[cfg(target_os = "windows")]
-        let mut command = {
-            use std::os::windows::process::CommandExt;
-            let root = std::env::var_os("SystemRoot").ok_or("无法打开系统浏览器")?;
-            let mut command = std::process::Command::new(PathBuf::from(root).join("explorer.exe"));
-            command.creation_flags(0x08000000); command
-        };
-        #[cfg(target_os = "macos")]
-        let mut command = std::process::Command::new("/usr/bin/open");
-        command.arg(url.as_str()).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null()).spawn().map_err(|_| "无法打开系统浏览器，请检查默认浏览器设置")?;
-        Ok(())
+        crate::browser::open_authorization(app,url.as_str()).await
     }
 
     struct Callback { client_id: String, code: Zeroizing<String> }
@@ -683,7 +672,7 @@ mod native {
             let values = OAuthValues::new();
             let url = authorization_url(&host_id, selected.as_ref(), &redirect_uri, &values)?;
             attempt.check()?;
-            open_authorization_url(&url)?;
+            attempt.run(open_authorization_url(app,&url)).await?;
             let callback = attempt.run(async {
                 tokio::time::timeout_at(deadline, listen_callback(listener, &authority, &values, selected.as_ref().map(|profile| profile.client_id.as_str())))
                     .await.map_err(|_| "ChatGPT 登录已超时，请重新登录".to_string())?

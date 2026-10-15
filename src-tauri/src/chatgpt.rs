@@ -95,12 +95,12 @@ pub async fn select_chatgpt_profile(app: AppHandle, window: WebviewWindow, profi
 }
 
 #[tauri::command]
-pub async fn open_chatgpt_usage(window: WebviewWindow) -> Result<(), String> {
+pub async fn open_chatgpt_usage(app:AppHandle, window: WebviewWindow) -> Result<(), String> {
     require_main(&window)?;
     #[cfg(desktop)]
-    { native::open_usage() }
+    { crate::browser::open_usage(&app).await }
     #[cfg(mobile)]
-    { Err("请在桌面版管理 ChatGPT 连接".into()) }
+    { let _=app; Err("请在桌面版管理 ChatGPT 连接".into()) }
 }
 
 #[tauri::command]
@@ -138,7 +138,6 @@ mod native {
 
     const MODELS_URL: &str = "https://api.openai.com/v1/models";
     const RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
-    const USAGE_URL: &str = "https://chatgpt.com/settings/usage";
     const CANCELLED: &str = "翻译已取消";
     const FAILED: &str = "ChatGPT 未能完成翻译，请稍后重试";
     const AUTH: &str = "ChatGPT 连接已失效，请在服务设置中重新授权";
@@ -531,21 +530,6 @@ mod native {
         }
         stream(response,control,deadline,|text|on_event.send(TranslationEvent::Delta{text}).map_err(|_|CANCELLED.into())).await
     }
-    pub fn open_usage() -> Result<(),String> {
-        #[cfg(target_os="windows")]
-        {
-            use std::os::windows::process::CommandExt;
-            let root = std::env::var_os("SystemRoot").map(std::path::PathBuf::from).unwrap_or_else(||"C:/Windows".into());
-            if !root.is_absolute() { return Err("无法打开 ChatGPT 用量设置".into()); }
-            std::process::Command::new(root.join("explorer.exe")).arg(USAGE_URL).creation_flags(0x08000000).spawn().map_err(|_|"无法打开用量设置，请在浏览器中访问 ChatGPT 设置".to_string())?;
-            Ok(())
-        }
-        #[cfg(target_os="macos")]
-        { std::process::Command::new("/usr/bin/open").arg(USAGE_URL).spawn().map_err(|_|"无法打开 ChatGPT 用量设置".to_string())?; Ok(()) }
-        #[cfg(not(any(target_os="windows",target_os="macos")))]
-        { Err("请在浏览器中打开 ChatGPT 设置管理用量".into()) }
-    }
-
     #[cfg(test)]
     mod tests {
         use super::*;

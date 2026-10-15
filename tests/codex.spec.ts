@@ -133,7 +133,7 @@ test('official ChatGPT sign-in adds a provider, confirms plan use, streams trans
   expect(await calls(page, 'translate_with_chatgpt')).toEqual([]);
   await expect(editor.locator('datalist option')).toHaveAttribute('value', 'gpt-6-luna');
   await editor.getByRole('button', { name: '管理用量', exact: true }).click();
-  expect(await calls(page, 'open_chatgpt_usage')).toHaveLength(1);
+  await expect.poll(async () => (await calls(page, 'open_chatgpt_usage')).length).toBe(1);
   await editor.getByRole('button', { name: '保存配置', exact: true }).click();
   await expect(editor).toHaveCount(0);
   const metadata = await page.evaluate(() => JSON.parse(localStorage.getItem('fastdict.v1.providers')!));
