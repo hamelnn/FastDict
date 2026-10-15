@@ -1,15 +1,19 @@
-# FastDict · 轻译
+# FastLingo
 
-按下快捷键，框选文字，立即开始翻译。FastDict 使用本地 OCR 识别截图，通过你配置的大模型 API 返回流式译文。
+按下快捷键，框选文字，立即开始翻译。FastLingo 使用本地 OCR 识别截图，通过你配置的大模型 API 返回流式译文。
 
 React + TypeScript 界面，Tauri 2 原生外壳，复用系统 WebView。
 
-Windows 截图白屏修复见 [FastDict 0.2.1 下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.2.1) 和 [Windows 说明](docs/windows.md)。macOS、Android 和 iOS 模拟器继续使用 [FastDict 0.2.0 下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.2.0) 的构建产物、安装说明和 SHA-256 校验清单；iPhone 真机安装需要另行配置 Apple 签名。
+Windows 新版本见 [FastLingo 0.3.0 下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.3.0) 和 [Windows 说明](docs/windows.md)。macOS、Android 和 iOS 模拟器现有二进制仍为 [FastDict 0.2.0](https://github.com/hamelnn/FastDict/releases/tag/v0.2.0)；iPhone 真机安装需要另行配置 Apple 签名。
+
+0.3.0 将应用更名为 **FastLingo**，首次启动不预置翻译服务，由用户自行添加。桌面偏好可选择关闭后直接退出或留在托盘，并支持开机启动；默认直接退出、开机不自启。更名沿用原有应用标识、数据目录和存储键，兼容已有服务、历史和密钥。
 
 ## 功能
 
 - **截图翻译**：桌面直接框选鼠标所在屏幕，松开即识别并翻译。
 - **文字翻译**：读取剪贴板、手动输入，或导入已有截图。
+- **自行配置 API**：首次启动从空服务列表开始，点击“添加翻译服务”配置。
+- **桌面行为**：关闭后退出或留在托盘可选，开机启动默认关闭。
 - **多 API 配置**：支持 OpenAI 兼容、Anthropic 和 Gemini 协议，侧栏切换服务。
 - **本地 OCR**：内置英文、简体中文、繁体中文、日文、韩文模型，复用识别 Worker。
 - **流式结果**：边生成边显示，支持取消、复制与本地历史。
@@ -19,14 +23,14 @@ Windows 截图白屏修复见 [FastDict 0.2.1 下载页](https://github.com/hame
 
 | 平台 | 当前状态 | 使用与构建 |
 | --- | --- | --- |
-| Windows x64 | 0.2.1 便携包实际启动、重复完成/取消截图及退出通过；安装程序待验收 | [Windows 说明](docs/windows.md) |
-| macOS | 已生成并校验 Apple Silicon / Intel 通用 DMG 和应用 ZIP，真机流程待验收 | [macOS 说明](docs/macos.md) |
-| iOS | 模拟器编译、安装启动与画面检查通过；真机签名及功能待验收 | [移动端说明](docs/mobile.md) |
-| Android ARM64 | 已生成并校验 debug APK，设备功能待验收 | [移动端说明](docs/mobile.md) |
+| Windows x64 | 0.3.0 便携包关闭退出、托盘隐藏/恢复、偏好保留及快捷键退出实测通过；安装程序待验收 | [Windows 说明](docs/windows.md) |
+| macOS | 0.2.0 通用 DMG 和应用 ZIP 已校验，真机流程待验收 | [macOS 说明](docs/macos.md) |
+| iOS | 0.2.0 模拟器编译、安装启动与画面检查通过；真机签名及功能待验收 | [移动端说明](docs/mobile.md) |
+| Android ARM64 | 0.2.0 debug APK 已生成并校验，设备功能待验收 | [移动端说明](docs/mobile.md) |
 
 仓库提供源码；`release/` 为本地构建输出，不随源码提交。完整截图到真实 API 的桌面流程仍需设备验收，详见 [验证范围](docs/validation.md)。
 
-Windows 0.2.1 将截图收尾改为先退出全屏、再隐藏截图窗口，并确认原生窗口已隐藏后才清空截图预览，避免侧栏弹出后留下空白遮罩。42 项前端交互回归通过；最终便携包在当前 Windows 显示器与缩放设置下，完成截图和取消截图各实测两次，均恢复侧栏且无白屏。本轮使用空白选区验证收尾与本地 OCR，没有调用真实 API；其他平台发行版本保持 0.2.0。
+0.3.0 的 121 项自动化测试及构建检查通过。本轮 Windows 实测覆盖关闭行为和托盘恢复；结束时恢复直接退出、自启关闭，再次点击标题栏 X 后窗口与进程均消失。未操作系统自启、未重新手动验收截图完成与取消，也未执行安装器安装或覆盖升级。0.2.1 的截图白屏修复及当时实测记录保留在 [验证范围](docs/validation.md)。
 
 ## 桌面用法
 
@@ -39,14 +43,14 @@ Windows 0.2.1 将截图收尾改为先退出全屏、再隐藏截图窗口，并
 | 截图翻译 | `Ctrl+Shift+S` | `⌥⌘S` |
 | 翻译已复制的文字 | `Ctrl+Shift+D` | `⌥⌘V` |
 | 取消截图或翻译 | `Esc` | `Esc` |
-| 完全退出 | 标题栏 X / `Ctrl+Alt+Q` | `⌘Q` / 全局 `⌥⌘Q` |
+| 完全退出 | 标题栏 X（退出模式）/ `Ctrl+Alt+Q` | `⌘Q` / 全局 `⌥⌘Q` |
 
-macOS 首次截图需要屏幕录制权限。Windows 的关闭按钮退出应用；macOS 的关闭按钮隐藏到菜单栏。
+macOS 首次截图需要屏幕录制权限。Windows 0.3.0 关闭按钮默认直接退出，可在偏好设置改为留在托盘；macOS 现有 0.2.0 二进制仍按原行为隐藏到菜单栏。
 
 ## 手机用法
 
 1. 在设置中添加 API 服务，选择目标语言。
-2. 使用手机系统截图，然后打开 FastDict，点击「选取截图」。选定图片后自动识别并翻译。
+2. 使用手机系统截图，然后打开 FastLingo，点击「选取截图」。选定图片后自动识别并翻译。
 3. 也可点击「粘贴文本」跳过 OCR；译文可复制或通过系统菜单分享。
 
 移动端使用手机自身截图操作，没有跨应用全局截图快捷键。最低 Android 7 / iOS 15；构建与安装见 [移动端说明](docs/mobile.md)。

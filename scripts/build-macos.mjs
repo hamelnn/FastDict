@@ -79,13 +79,13 @@ async function main() {
 
   const output = join(root, 'release/macos');
   await mkdir(output, { recursive: true });
-  const archiveName = `FastDict-macOS-${packageInfo.version}-${target}.app.zip`;
-  const dmgName = `FastDict-macOS-${packageInfo.version}-${target}.dmg`;
+  const archiveName = `${config.productName}-macOS-${packageInfo.version}-${target}.app.zip`;
+  const dmgName = `${config.productName}-macOS-${packageInfo.version}-${target}.dmg`;
   // ditto preserves the app's executable mode, symlinks and resource metadata.
   run('/usr/bin/ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', app, join(output, archiveName)], env);
   await copyFile(sourceDmg, join(output, dmgName));
   await copyFile(join(root, 'THIRD_PARTY_NOTICES.md'), join(output, 'THIRD_PARTY_NOTICES.md'));
-  await writeFile(join(output, 'README-macOS.txt'), `轻译 FastDict ${packageInfo.version} — macOS\n\n打开 DMG，将 FastDict.app 拖到“应用程序”，或解压 app.zip。\n首次配置翻译 API，API Key 保存到系统钥匙串。\n按 ⌥⌘S 框选屏幕文字，松开鼠标后自动识别并翻译。\n按 ⌥⌘V 翻译已复制的文字；Esc 取消当前操作。\n首次截图需要由用户允许屏幕录制；授权后可能需要退出再打开。\n红色关闭按钮隐藏到菜单栏，⌘Q 或菜单栏“退出”完全退出。\n⌥⌘Q 为原生全局退出快捷键，界面失效时仍可使用。\n\n构建目标：${target}\n实际架构：${architectures}\n签名类型：${signature}\n签名和 DMG 完整性已校验；此脚本未验证 Apple 公证状态。\n`, 'utf8');
+  await writeFile(join(output, 'README-macOS.txt'), `${config.productName} ${packageInfo.version} — macOS\n\n打开 DMG，将 ${config.productName}.app 拖到“应用程序”，或解压 app.zip。\n首次配置翻译 API，API Key 保存到系统钥匙串。\n按 ⌥⌘S 框选屏幕文字，松开鼠标后自动识别并翻译。\n按 ⌥⌘V 翻译已复制的文字；Esc 取消当前操作。\n首次截图需要由用户允许屏幕录制；授权后可能需要退出再打开。\n关闭按钮默认退出，可在偏好设置改为隐藏到菜单栏；开机启动默认关闭。⌘Q 或菜单栏“退出”始终完全退出。\n⌥⌘Q 为原生全局退出快捷键，界面失效时仍可使用。\n\n构建目标：${target}\n实际架构：${architectures}\n签名类型：${signature}\n签名和 DMG 完整性已校验；此脚本未验证 Apple 公证状态。\n`, 'utf8');
   const manifest = { version: packageInfo.version, target, architectures: architectures.split(/\s+/), signature, notarization: 'not_checked', artifacts: [] };
   for (const name of [archiveName, dmgName]) {
     const bytes = await readFile(join(output, name));

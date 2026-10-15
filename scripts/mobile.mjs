@@ -92,10 +92,10 @@ async function exportAndroid(info, config, env) {
   run(info.java, ['-jar', join(info.buildTools, 'lib/apksigner.jar'), 'verify', '--verbose', valid[0]], env);
   const output = join(root, 'release/android');
   await mkdir(output, { recursive: true });
-  const name = `FastDict-Android-${config.version}-${info.abi}-debug.apk`;
+  const name = `${config.productName}-Android-${config.version}-${info.abi}-debug.apk`;
   await copyFile(valid[0], join(output, name));
   await writeManifest(output, name, { version: config.version, target: info.target, abi: info.abi, kind: 'debug-apk', signing: 'android-debug', rustProfile: 'optimized-dev', rustOptions: { debug: 0, strip: 'symbols', optLevel: 's' }, deviceTest: 'not_run' });
-  await writeFile(join(output, 'README-Android.txt'), `FastDict ${config.version} Android 测试版\n\n安装 ${name}。此包使用 Android debug 签名，仅用于测试，不是商店发布版。\nRust 原生库按体积优化并在编译时去除调试符号，以减小安装包。\n需要 Android 7.0 (API 24) 或更新系统。\n在其他 App 截图后，打开 FastDict，选择截图后识别并翻译。\n也可主动粘贴已复制的文字。API Key 使用 Android Keystore 保护。\n不同机器或 CI 运行使用的 debug 密钥可能不同；签名不匹配时无法覆盖安装。\n此清单只证明编译与包校验通过，实际设备功能仍需验证。\n`, 'utf8');
+  await writeFile(join(output, 'README-Android.txt'), `${config.productName} ${config.version} Android 测试版\n\n安装 ${name}。此包使用 Android debug 签名，仅用于测试，不是商店发布版。\nRust 原生库按体积优化并在编译时去除调试符号，以减小安装包。\n需要 Android 7.0 (API 24) 或更新系统。\n在其他 App 截图后，打开 ${config.productName}，选择截图后识别并翻译。\n也可主动粘贴已复制的文字。API Key 使用 Android Keystore 保护。\n不同机器或 CI 运行使用的 debug 密钥可能不同；签名不匹配时无法覆盖安装。\n此清单只证明编译与包校验通过，实际设备功能仍需验证。\n`, 'utf8');
   await copyFile(join(root, 'THIRD_PARTY_NOTICES.md'), join(output, 'THIRD_PARTY_NOTICES.md'));
   process.stdout.write(`Android 测试 APK 已生成并校验：${join(output, name)}\n`);
 }
@@ -116,10 +116,10 @@ async function exportIos(info, config, env) {
   if (architectures !== info.arch) throw new Error(`iOS 模拟器架构不匹配，需要 ${info.arch}。`);
   const output = join(root, 'release/ios');
   await mkdir(output, { recursive: true });
-  const name = `FastDict-iOS-${config.version}-${info.target}-simulator.app.zip`;
+  const name = `${config.productName}-iOS-${config.version}-${info.target}-simulator.app.zip`;
   run('/usr/bin/ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', valid[0], join(output, name)], env);
   await writeManifest(output, name, { version: config.version, target: info.target, kind: 'ios-simulator-app', signing: 'none', deviceInstallable: false, deviceTest: 'not_run' });
-  await writeFile(join(output, 'README-iOS.txt'), `FastDict ${config.version} iOS 模拟器构建\n\n解压后将 .app 拖入 Mac 的 iOS Simulator。不能直接安装到 iPhone/iPad。\n真机安装与 TestFlight 分发需要自己的 Apple 开发签名和描述文件，请在 Xcode 配置。\n本构建使用 --no-sign，没有伪造 Apple Team 或签名证书。\n`, 'utf8');
+  await writeFile(join(output, 'README-iOS.txt'), `${config.productName} ${config.version} iOS 模拟器构建\n\n解压后将 .app 拖入 Mac 的 iOS Simulator。不能直接安装到 iPhone/iPad。\n真机安装与 TestFlight 分发需要自己的 Apple 开发签名和描述文件，请在 Xcode 配置。\n本构建使用 --no-sign，没有伪造 Apple Team 或签名证书。\n`, 'utf8');
   await copyFile(join(root, 'THIRD_PARTY_NOTICES.md'), join(output, 'THIRD_PARTY_NOTICES.md'));
   process.stdout.write(`iOS 模拟器应用已生成并校验：${join(output, name)}\n`);
 }

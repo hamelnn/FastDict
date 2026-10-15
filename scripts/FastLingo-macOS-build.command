@@ -9,7 +9,7 @@ if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
-print '正在准备轻译 macOS 的构建依赖…'
+print '正在准备FastLingo macOS 的构建依赖…'
 task_build_status=0
 if npm ci && npm run macos:build; then
   print '已生成应用，请查看 release/macos。'

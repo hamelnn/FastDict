@@ -75,7 +75,7 @@ pub fn capture_monitor(monitor: &xcap::Monitor) -> Result<RgbaImage, String> {
             Ok(None) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err("系统截图超时，请重试；若持续失败，请检查 FastDict 的屏幕录制权限并重新启动应用".into());
+                return Err("系统截图超时，请重试；若持续失败，请检查 FastLingo 的屏幕录制权限并重新启动应用".into());
             }
             Err(_) => {
                 let _ = child.kill();
@@ -86,7 +86,7 @@ pub fn capture_monitor(monitor: &xcap::Monitor) -> Result<RgbaImage, String> {
     };
     if !status.success() {
         crate::macos::ensure_screen_permission()?;
-        return Err("系统截图失败，请在系统设置中允许 FastDict 屏幕录制，然后退出并重新打开应用".into());
+        return Err("系统截图失败，请在系统设置中允许 FastLingo 屏幕录制，然后退出并重新打开应用".into());
     }
     #[cfg(unix)]
     {

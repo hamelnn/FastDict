@@ -233,7 +233,7 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [stop, notify]);
   const updatePreferences = (patch: Partial<Preferences>) => {
-    if (patch.sourceLang || patch.targetLang || patch.activeProviderId || patch.ocrLang) stop();
+    if (patch.sourceLang || patch.targetLang || 'activeProviderId' in patch || patch.ocrLang) stop();
     setPreferences((p) => ({ ...p, ...patch }));
   };
 
@@ -256,7 +256,10 @@ export default function App() {
       const started = performance.now();
       let tokenSeen = false;
       try {
-        if (!active) throw new Error('请先添加一个翻译 API。');
+        if (!active) {
+          setShowPresets(true);
+          throw new Error('请先添加翻译服务，填写 API 地址、模型和密钥。');
+        }
         const apiKey = await getApiKey(active.id);
         if (job !== jobRef.current) return;
         if (!apiKey && !isKeylessProvider(active)) {
@@ -483,7 +486,7 @@ export default function App() {
       return;
     }
     if (!isNative) {
-      notify('桌面截图快捷键请在轻译桌面应用中使用。网页可通过“浏览器截图体验”试用。');
+      notify('桌面截图快捷键请在 FastLingo 桌面应用中使用。网页可通过“浏览器截图体验”试用。');
       return;
     }
     stop();
@@ -599,7 +602,11 @@ export default function App() {
   const removeProvider = async (provider: Provider) => {
     try {
       await deleteApiKey(provider.id);
-      setProviders((current) => current.filter((p) => p.id !== provider.id));
+      const remaining = providers.filter((p) => p.id !== provider.id);
+      setProviders(remaining);
+      if (active?.id === provider.id || !remaining.length) {
+        updatePreferences({ activeProviderId: remaining[0]?.id || '' });
+      }
       setEditing(null);
       notify('API 配置已移除');
     } catch (e) {
@@ -640,16 +647,16 @@ export default function App() {
             event.preventDefault();
             chooseView('translate');
           }}
-          aria-label="轻译首页"
+          aria-label="FastLingo 首页"
         >
           <span className="brand-mark">
             <Languages size={23} strokeWidth={1.8} />
           </span>
           <span>
             <strong>
-              轻译<span className="brand-dot">.</span>
+              FastLingo
             </strong>
-            <small>{isNativeMac ? 'FASTDICT FOR MAC' : 'FASTDICT'}</small>
+            <small>{isNativeMac ? 'FOR MAC' : 'CAPTURE · TRANSLATE'}</small>
           </span>
         </a>
         <div className="sidebar-caption">工作空间</div>
@@ -680,6 +687,7 @@ export default function App() {
           </button>
         </div>
         <div className="provider-list">
+          {!providers.length && <p className="provider-empty">尚未添加翻译服务<br /><span>点击上方 + 接入自己的 API</span></p>}
           {providers.map((provider, index) => (
             <button
               key={provider.id}
@@ -726,12 +734,12 @@ export default function App() {
         )}
         {MOBILE ? (
           <header className="mobile-header">
-            <a className="mobile-brand" href="#" aria-label="轻译首页" onClick={(event) => {
+            <a className="mobile-brand" href="#" aria-label="FastLingo 首页" onClick={(event) => {
               event.preventDefault();
               chooseView('translate');
             }}>
               <span className="brand-mark"><Languages size={22} strokeWidth={1.8} /></span>
-              <span><strong>轻译<span className="brand-dot">.</span></strong><small>FASTDICT · {operatingSystem === 'ios' ? 'iOS' : 'ANDROID'}</small></span>
+              <span><strong>FastLingo</strong><small>{operatingSystem === 'ios' ? 'iOS' : 'ANDROID'}</small></span>
             </a>
             <span className="availability"><span className={readyCount ? 'status-dot' : 'status-dot unconfigured'} />{readyCount ? '已就绪' : '待配置 API'}</span>
           </header>
@@ -812,7 +820,7 @@ export default function App() {
             <div className="preview-notice">
               <Monitor size={16} />
               <span>
-                <strong>当前是网页预览</strong>桌面快捷键与直接框选请打开轻译桌面应用。
+                <strong>当前是网页预览</strong>桌面快捷键与直接框选请打开 FastLingo 桌面应用。
               </span>
               <button
                 className="text-button"
@@ -834,6 +842,16 @@ export default function App() {
                   <p>{MOBILE ? '选一张截图，或粘贴一段文字。' : '截图、粘贴或导入图片，译文即时呈现。'}</p>
                 </div>
               </div>
+              {!providers.length && (
+                <section className="provider-onboarding" aria-label="添加翻译服务引导">
+                  <span className="onboarding-icon"><Sparkles size={22} strokeWidth={1.6} /></span>
+                  <div>
+                    <h2>添加你的第一个翻译服务</h2>
+                    <p>选择服务模板或自定义接口，填写自己的 API 地址、模型和密钥，再开始截图翻译。</p>
+                  </div>
+                  <button className="button primary" onClick={() => setShowPresets(true)}><Plus size={16} />添加翻译服务</button>
+                </section>
+              )}
               <div className="capture-bar">
                 <div className="capture-buttons">
                   <button
@@ -1127,8 +1145,10 @@ export default function App() {
                     <select
                       aria-label="翻译服务"
                       value={active?.id || ''}
+                      disabled={!providers.length}
                       onChange={(event) => updatePreferences({ activeProviderId: event.target.value })}
                     >
+                      {!providers.length && <option value="">请先添加服务</option>}
                       {providers.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name}

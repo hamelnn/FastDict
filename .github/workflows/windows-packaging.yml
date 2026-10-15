@@ -35,7 +35,7 @@ jobs:
         shell: pwsh
         run: |
           $manifest = Get-Content release/manifest.json -Raw | ConvertFrom-Json
-          $actualVersion = (Get-Item release/FastDict.exe).VersionInfo.ProductVersion
+          $actualVersion = (Get-Item release/FastLingo.exe).VersionInfo.ProductVersion
           if ($actualVersion -ne $manifest.version) { throw 'Executable version does not match the release manifest.' }
           foreach ($artifact in $manifest.artifacts) {
             $path = Join-Path release $artifact.name
@@ -44,10 +44,10 @@ jobs:
           }
       - uses: actions/upload-artifact@v7
         with:
-          name: FastDict-Windows-x64-${{ github.run_number }}
+          name: FastLingo-Windows-x64-${{ github.run_number }}
           path: |
             release/*-setup.exe
-            release/FastDict-Windows-x64-*.zip
+            release/FastLingo-Windows-x64-*.zip
             release/manifest.json
             release/README-Windows.txt
             release/THIRD_PARTY_NOTICES.md

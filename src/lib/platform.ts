@@ -77,7 +77,7 @@ export async function shareText(text: string): Promise<void> {
     return;
   }
   if (isMobile && navigator.share) {
-    await navigator.share({ title: '轻译', text });
+    await navigator.share({ title: 'FastLingo', text });
     return;
   }
   throw new Error('当前环境不支持系统分享，请复制译文。');

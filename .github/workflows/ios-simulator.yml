@@ -48,7 +48,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: FastDict-iOS-simulator-${{ github.run_number }}
+          name: FastLingo-iOS-simulator-${{ github.run_number }}
           path: |
             release/ios/*.app.zip
             release/ios/manifest-*.json

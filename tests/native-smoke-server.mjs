@@ -7,7 +7,7 @@ const root=resolve(import.meta.dirname,'..');
 const server=createServer((request,response)=>{
   if(request.method==='GET'){
     response.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});
-    response.end('<!doctype html><html><head><title>FastDict Native Capture Fixture</title><style>body{margin:0;background:white;color:#151515;font-family:Arial,sans-serif}main{padding:100px 80px}h1{font-size:20px;font-weight:400;color:#888;margin:0 0 100px}p{font-size:80px;margin:0;white-space:nowrap}small{display:block;color:#888;margin-top:100px}</style></head><body><main><h1>FastDict Windows native screenshot test</h1><p>Hello world</p><small>Select only the large text. This is a local test page.</small></main></body></html>');return;
+    response.end('<!doctype html><html><head><title>FastLingo Native Capture Fixture</title><style>body{margin:0;background:white;color:#151515;font-family:Arial,sans-serif}main{padding:100px 80px}h1{font-size:20px;font-weight:400;color:#888;margin:0 0 100px}p{font-size:80px;margin:0;white-space:nowrap}small{display:block;color:#888;margin-top:100px}</style></head><body><main><h1>FastLingo Windows native screenshot test</h1><p>Hello world</p><small>Select only the large text. This is a local test page.</small></main></body></html>');return;
   }
   if(request.method!=='POST'||request.url!=='/v1/chat/completions'){response.writeHead(404);response.end();return;}
   let body='';request.on('data',chunk=>body+=chunk);request.on('end',async()=>{

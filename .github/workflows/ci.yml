@@ -1,4 +1,4 @@
-name: Verify FastDict
+name: Verify FastLingo
 
 on:
   push:

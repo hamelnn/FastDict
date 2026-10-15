@@ -36,7 +36,7 @@ pub fn request_screen_permission() -> ScreenPermission {
 #[cfg(desktop)]
 pub fn ensure_screen_permission() -> Result<(), String> {
     if !screen_permission().granted {
-        return Err("请在轻译设置中点击「允许屏幕录制」，或前往系统设置 → 隐私与安全性 → 屏幕录制（或屏幕与系统音频录制）启用 FastDict，然后退出并重新打开应用。".into());
+        return Err("请在FastLingo设置中点击「允许屏幕录制」，或前往系统设置 → 隐私与安全性 → 屏幕录制（或屏幕与系统音频录制）启用 FastLingo，然后退出并重新打开应用。".into());
     }
     Ok(())
 }
@@ -69,22 +69,22 @@ pub fn cursor_point() -> Option<(f64, f64)> {
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn application_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
     use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem as Native, Submenu, WINDOW_SUBMENU_ID};
-    let app_menu = Submenu::with_items(app, "FastDict", true, &[
-        &Native::about(app, Some("关于 FastDict"), Some(AboutMetadata {
-            name: Some("FastDict · 轻译".into()), version: Some(env!("CARGO_PKG_VERSION").into()), ..Default::default()
+    let app_menu = Submenu::with_items(app, "FastLingo", true, &[
+        &Native::about(app, Some("关于 FastLingo"), Some(AboutMetadata {
+            name: Some("FastLingo".into()), version: Some(env!("CARGO_PKG_VERSION").into()), ..Default::default()
         }))?,
         &Native::separator(app)?,
         &MenuItem::with_id(app, "preferences", "设置…", true, Some("Command+,"))?,
-        &MenuItem::with_id(app, "show", "显示轻译", true, None::<&str>)?,
+        &MenuItem::with_id(app, "show", "显示FastLingo", true, None::<&str>)?,
         &Native::separator(app)?,
         &Native::services(app, Some("服务"))?,
         &Native::separator(app)?,
-        &Native::hide(app, Some("隐藏 FastDict"))?,
+        &Native::hide(app, Some("隐藏 FastLingo"))?,
         &Native::hide_others(app, Some("隐藏其他"))?,
         &Native::show_all(app, Some("显示全部"))?,
         &Native::separator(app)?,
         // Custom native event exits immediately, independent of JavaScript.
-        &MenuItem::with_id(app, "quit", "退出 FastDict", true, Some("Command+Q"))?,
+        &MenuItem::with_id(app, "quit", "退出 FastLingo", true, Some("Command+Q"))?,
     ])?;
     let edit_menu = Submenu::with_items(app, "编辑", true, &[
         &Native::undo(app, Some("撤销"))?, &Native::redo(app, Some("重做"))?,
@@ -95,7 +95,7 @@ pub fn application_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Me
     let window_menu = Submenu::with_id_and_items(app, WINDOW_SUBMENU_ID, "窗口", true, &[
         &Native::minimize(app, Some("最小化"))?, &Native::maximize(app, Some("缩放"))?,
         &Native::separator(app)?, &Native::close_window(app, Some("关闭窗口"))?,
-        &MenuItem::with_id(app, "show", "显示轻译", true, None::<&str>)?,
+        &MenuItem::with_id(app, "show", "显示FastLingo", true, None::<&str>)?,
     ])?;
     Menu::with_items(app, &[&app_menu, &edit_menu, &window_menu])
 }

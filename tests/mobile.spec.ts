@@ -5,15 +5,17 @@ import { resolve } from 'node:path';
 type MobileOS = 'ios' | 'android';
 interface MobileCall { command: string; args: Record<string, unknown>; }
 
-async function installMobile(page: Page, os: MobileOS) {
-  await page.addInitScript(({ os }) => {
+async function installMobile(page: Page, os: MobileOS, withService = true) {
+  await page.addInitScript(({ os, withService }) => {
     Object.defineProperty(navigator, 'platform', { configurable: true, value: os === 'ios' ? 'iPhone' : 'Linux armv8l' });
     Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, value: 5 });
     const provider = { id: 'mobile-test', name: '移动测试服务', kind: 'openai', baseUrl: 'https://mobile.example/v1', model: 'mobile-test-model', hasKey: true };
-    localStorage.setItem('fastdict.v1.providers', JSON.stringify([provider]));
-    localStorage.setItem('fastdict.v1.preferences', JSON.stringify({ sourceLang: 'auto', targetLang: 'zh-CN', ocrLang: 'eng', autoTranslate: true, activeProviderId: provider.id }));
+    if (withService) {
+      localStorage.setItem('fastdict.v1.providers', JSON.stringify([provider]));
+      localStorage.setItem('fastdict.v1.preferences', JSON.stringify({ sourceLang: 'auto', targetLang: 'zh-CN', ocrLang: 'eng', autoTranslate: true, activeProviderId: provider.id }));
+    }
     const calls: MobileCall[] = [];
-    const vault = new Map([[provider.id, 'mobile-test-only-key']]);
+    const vault = new Map(withService ? [[provider.id, 'mobile-test-only-key']] : []);
     const reads = new Map<number, number>();
     let rid = 0;
     const fixture = { calls, image: null as { dataUrl: string; width: number; height: number } | null, holdStream: false, holdPicker: false, resolvePicker: null as (() => void) | null };
@@ -47,7 +49,7 @@ async function installMobile(page: Page, os: MobileOS) {
         },
       },
     });
-  }, { os });
+  }, { os, withService });
   await page.goto('/');
   await expect(page.getByRole('navigation', { name: '移动导航' })).toBeVisible();
   await expect(page.getByRole('textbox', { name: '待翻译文本' })).toBeVisible();
@@ -81,6 +83,28 @@ for (const os of ['ios', 'android'] as const) {
         : 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/134.0 Mobile Safari/537.36',
     });
 
+    test('starts with no services and guides explicit setup without desktop settings or API calls', async ({ page }) => {
+      await installMobile(page, os, false);
+      const guide = page.getByRole('region', { name: '添加翻译服务引导' });
+      await expect(guide.getByRole('heading', { name: '添加你的第一个翻译服务' })).toBeVisible();
+      await expect(page.getByLabel('翻译服务', { exact: true })).toBeDisabled();
+      expect(await page.evaluate(() => localStorage.getItem('fastdict.v1.providers'))).toBeNull();
+      expect(await calls(page, 'get_api_key')).toHaveLength(0);
+      expect(await calls(page, 'plugin:http|fetch')).toHaveLength(0);
+      await mkdir(resolve('native-test-results'), { recursive: true });
+      await page.screenshot({ path: resolve(`native-test-results/fastlingo-${os}-onboarding.png`), fullPage: true });
+      await guide.getByRole('button', { name: '添加翻译服务', exact: true }).click();
+      const presets = page.getByRole('dialog', { name: '添加翻译服务', exact: true });
+      await expect(presets.getByRole('button', { name: /本地 Ollama/ })).toBeVisible();
+      await presets.getByRole('button', { name: '关闭', exact: true }).click();
+      await navigate(page, '偏好设置');
+      await expect(page.locator('.settings-provider')).toHaveCount(0);
+      await expect(page.getByRole('region', { name: '桌面行为' })).toHaveCount(0);
+      await expect(page.getByRole('switch', { name: '开机启动', exact: true })).toHaveCount(0);
+      expect(await calls(page, 'get_desktop_preferences')).toHaveLength(0);
+      expect(await calls(page, 'set_desktop_preferences')).toHaveLength(0);
+    });
+
     test('pastes, translates, shares and navigates without desktop actions or background clipboard reads', async ({ page }) => {
       await installMobile(page, os);
       expect(await calls(page, 'read_clipboard')).toHaveLength(0);
@@ -99,7 +123,7 @@ for (const os of ['ios', 'android'] as const) {
       await expect(page.locator('.history-card')).toHaveCount(1);
       await navigate(page, '偏好设置');
       await expect(page.locator('#quickstart')).not.toContainText('Ctrl');
-      await expect(page.getByRole('button', { name: '退出轻译' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /^退出\s*FastLingo$/ })).toHaveCount(0);
       await page.getByRole('button', { name: /移动测试服务/ }).click();
       const editor = page.getByRole('dialog', { name: 'API 服务配置' });
       await editor.getByPlaceholder('输入新密钥以替换').fill('mobile-replacement-test-key');

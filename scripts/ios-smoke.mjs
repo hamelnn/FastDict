@@ -75,7 +75,7 @@ async function main() {
     const selection = chooseDevice(JSON.parse(simctl(['list', '--json'])), arch);
     report.device = selection.name;
     report.runtime = selection.runtime.version;
-    const name = `FastDict-Smoke-${process.env.GITHUB_RUN_ID || process.pid}-${process.env.GITHUB_RUN_ATTEMPT || '1'}`;
+    const name = `FastLingo-Smoke-${process.env.GITHUB_RUN_ID || process.pid}-${process.env.GITHUB_RUN_ATTEMPT || '1'}`;
     const created = simctl(['create', name, selection.type, selection.runtime.identifier]);
     if (!uuidPattern.test(created)) throw new Error('simctl did not return a device UUID.');
     createdDevice = created;

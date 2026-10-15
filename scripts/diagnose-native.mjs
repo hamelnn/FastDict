@@ -1,4 +1,4 @@
-// Read-only diagnostics for the local FastDict WebView. Never prints user text or settings.
+// Read-only diagnostics for the local FastLingo WebView. Never prints user text or settings.
 const pages = await (await fetch('http://127.0.0.1:9223/json/list')).json();
 for (const page of pages.filter(item => item.type === 'page')) {
   const socket = new WebSocket(page.webSocketDebuggerUrl);

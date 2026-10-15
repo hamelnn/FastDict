@@ -1,6 +1,6 @@
 # macOS 版
 
-已实现菜单栏、Mac 快捷键、权限引导和 Keychain。0.2.0 已通过 [macOS 通用包构建](https://github.com/hamelnn/FastDict/actions/runs/38749467816)，生成并校验 Apple Silicon / Intel 通用 `.app.zip` 和 `.dmg`；真机操作流程尚待验收。
+已实现菜单栏、Mac 快捷键、权限引导和 Keychain。0.3.0 源码名称为 FastLingo，关闭按钮默认退出，开机启动默认关闭；可在偏好设置调整。以下下载与包验证仍为原 FastDict 0.2.0。0.2.0 已通过 [macOS 通用包构建](https://github.com/hamelnn/FastDict/actions/runs/38749467816)，生成并校验 Apple Silicon / Intel 通用 `.app.zip` 和 `.dmg`；真机操作流程尚待验收。
 
 下载见 [GitHub Release](https://github.com/hamelnn/FastDict/releases/tag/v0.2.0)。当前为 ad-hoc 签名的测试版，未进行 Apple 公证。
 
@@ -14,7 +14,7 @@
 | 翻译已复制的文字 | `⌥⌘V` |
 | 翻译输入框内容 | `⌘Enter` |
 | 取消截图或翻译 | `Esc` |
-| 隐藏主窗口，继续运行 | 红色关闭按钮、“隐藏到菜单栏” |
+| 隐藏主窗口，继续运行 | “隐藏到菜单栏”；0.3.0 可在偏好设置将关闭按钮改为隐藏 |
 | 重新打开 | 菜单栏图标、Dock 图标 |
 | 偏好设置 | 应用菜单或 `⌘,` |
 | 完全退出 | `⌘Q`、菜单栏“退出”或全局 `⌥⌘Q` |
@@ -31,7 +31,7 @@ npm ci
 npm run macos:build
 ```
 
-也可在工具链就绪后运行 `scripts/FastDict-macOS-build.command`。默认输出至 `release/macos/`：
+也可在工具链就绪后运行 `scripts/FastLingo-macOS-build.command`。默认输出至 `release/macos/`：
 
 - `.app.zip`：保留执行权限的应用包。
 - `.dmg`：拖入“应用程序”安装。

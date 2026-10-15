@@ -20,7 +20,7 @@ const SAFE_STAGES: &[&str] = &[
 pub fn record(app: &AppHandle, stage: &str) {
     // Keep the fixed stage available even when log directories are unavailable;
     // diagnostic output itself must never panic if a parent closes stderr.
-    let _ = writeln!(std::io::stderr(), "FastDict: {stage}");
+    let _ = writeln!(std::io::stderr(), "FastLingo: {stage}");
     let Some(state) = app.try_state::<DiagnosticsState>() else { return; };
     let Ok(_guard) = state.writer.lock() else { return; };
     let Ok(directory) = app.path().app_log_dir() else { return; };
@@ -119,10 +119,10 @@ fn failure(app: &AppHandle, stage: &str, recover: bool) {
     record(app, "native-fallback-requested");
     let path = app.path().app_log_dir().ok().map(|path| path.join("startup.log").display().to_string()).unwrap_or_default();
     #[cfg(target_os = "macos")]
-    let exit_instruction = "你可以关闭主窗口，使用菜单「退出 FastDict」，或按 Command + Q / Option + Command + Q 退出，然后重新打开应用。";
+    let exit_instruction = "你可以关闭主窗口，使用菜单「退出 FastLingo」，或按 Command + Q / Option + Command + Q 退出，然后重新打开应用。";
     #[cfg(not(target_os = "macos"))]
     let exit_instruction = "你可以关闭主窗口，或按 Ctrl + Alt + Q 立即退出，然后重新打开应用。";
-    let message = format!("轻译界面未能完成加载。\n\n{exit_instruction}\n\n诊断日志：\n{path}");
+    let message = format!("FastLingo界面未能完成加载。\n\n{exit_instruction}\n\n诊断日志：\n{path}");
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let shown = native_message(&app, &message);
@@ -182,7 +182,7 @@ fn native_message(_app: &AppHandle, message: &str) -> bool {
         fn MessageBoxW(owner: *mut c_void, text: *const u16, title: *const u16, flags: u32) -> i32;
     }
     let text: Vec<u16> = message.encode_utf16().chain(std::iter::once(0)).collect();
-    let title: Vec<u16> = "FastDict · 轻译启动提示".encode_utf16().chain(std::iter::once(0)).collect();
+    let title: Vec<u16> = "FastLingo启动提示".encode_utf16().chain(std::iter::once(0)).collect();
     unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), title.as_ptr(), 0x10) != 0 }
 }
 
@@ -198,7 +198,7 @@ fn native_message(app: &AppHandle, message: &str) -> bool {
             alternate_button: *const c_void, other_button: *const c_void, response: *mut usize) -> i32;
     }
     unsafe {
-        let strings: Vec<*const c_void> = ["FastDict · 轻译启动提示", message, "退出应用", "保留窗口"].iter()
+        let strings: Vec<*const c_void> = ["FastLingo启动提示", message, "退出应用", "保留窗口"].iter()
             .map(|text| CFStringCreateWithBytes(std::ptr::null(), text.as_ptr(), text.len() as isize, 0x0800_0100, 0)).collect();
         if strings.iter().any(|value| value.is_null()) {
             for value in strings { if !value.is_null() { CFRelease(value); } }

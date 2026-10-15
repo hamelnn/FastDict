@@ -4,19 +4,19 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"/>
   <meta name="theme-color" content="#f8faf8"/>
-  <meta name="description" content="轻译 FastDict — 随手捕获，即刻理解。截图 OCR 与流式 AI 翻译。"/>
-  <title>轻译 · FastDict</title>
+  <meta name="description" content="FastLingo — 随手捕获，即刻理解。截图 OCR 与流式 AI 翻译。"/>
+  <title>FastLingo</title>
   <style>
     .boot-surface{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:#f8faf8;font-family:'Microsoft YaHei',system-ui,sans-serif;color:#273c35;padding:28px;box-sizing:border-box}
     .boot-surface[hidden]{display:none}.boot-card{max-width:470px;width:100%;background:#fff;border:1px solid #e0e9df;border-radius:15px;padding:30px;box-shadow:0 10px 35px #273c3508}.boot-brand{font-size:13px;letter-spacing:2px;color:#799271;margin:0 0 20px}.boot-card h1,.boot-card h2{font-size:22px;margin:0 0 13px;font-weight:600}.boot-card p{font-size:13px;line-height:1.8;margin:0;color:#7c8e74}.boot-actions{display:flex;gap:10px;margin-top:24px}.boot-actions button{border:1px solid #d9e4d5;background:#fff;color:#526e47;font:inherit;font-size:13px;border-radius:7px;padding:10px 17px;min-height:44px;cursor:pointer}.boot-actions button:first-child{background:#29694f;color:#fff;border-color:#29694f}.boot-stage{font-size:11px!important;opacity:.7;margin-top:17px!important;overflow-wrap:anywhere}
   </style>
 </head>
 <body>
-  <section id="fastdict-boot" class="boot-surface" aria-label="正在启动轻译">
-    <div class="boot-card"><div class="boot-brand">FASTDICT · 轻译</div><h1>正在启动轻译</h1><p>正在加载本地界面。你的配置和翻译记录会保留。</p><div class="boot-actions"><button type="button" data-boot-quit>退出应用</button><button type="button" data-mobile-retry hidden>重新加载</button></div><p class="boot-stage" data-boot-shortcuts hidden>Ctrl + Alt + Q 可立即退出应用。</p><p id="fastdict-boot-status" class="boot-stage"></p></div>
+  <section id="fastdict-boot" class="boot-surface" aria-label="正在启动FastLingo">
+    <div class="boot-card"><div class="boot-brand">FASTLINGO</div><h1>正在启动FastLingo</h1><p>正在加载本地界面。你的配置和翻译记录会保留。</p><div class="boot-actions"><button type="button" data-boot-quit>退出应用</button><button type="button" data-mobile-retry hidden>重新加载</button></div><p class="boot-stage" data-boot-shortcuts hidden>Ctrl + Alt + Q 可立即退出应用。</p><p id="fastdict-boot-status" class="boot-stage"></p></div>
   </section>
   <section id="fastdict-boot-error" class="boot-surface" role="alert" hidden>
-    <div class="boot-card"><div class="boot-brand">FASTDICT · 轻译</div><h2>应用界面未能启动</h2><p>可重新加载界面，或退出后重新打开。现有配置、历史和密钥没有被清除。</p><div class="boot-actions"><button type="button" id="fastdict-boot-retry">重新加载</button><button type="button" data-boot-quit>退出应用</button></div><p class="boot-stage" data-boot-shortcuts hidden>Ctrl + Alt + Q 可立即退出应用。</p><p id="fastdict-boot-stage" class="boot-stage"></p></div>
+    <div class="boot-card"><div class="boot-brand">FASTLINGO</div><h2>应用界面未能启动</h2><p>可重新加载界面，或退出后重新打开。现有配置、历史和密钥没有被清除。</p><div class="boot-actions"><button type="button" id="fastdict-boot-retry">重新加载</button><button type="button" data-boot-quit>退出应用</button></div><p class="boot-stage" data-boot-shortcuts hidden>Ctrl + Alt + Q 可立即退出应用。</p><p id="fastdict-boot-stage" class="boot-stage"></p></div>
   </section>
   <div id="root"></div>
   <script>
@@ -30,7 +30,7 @@
       var mac = /Mac/.test(navigator.platform) && !mobile;
       document.querySelectorAll('[data-boot-shortcuts]').forEach(function (element) {
         element.hidden = !native && !mobile;
-        if (mobile) element.textContent = '你可以使用系统手势返回主屏幕，再重新打开轻译。';
+        if (mobile) element.textContent = '你可以使用系统手势返回主屏幕，再重新打开FastLingo。';
         else if (mac) element.textContent = '⌘Q 退出应用；⌥⌘Q 可立即退出。';
       });
       if (mobile) {

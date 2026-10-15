@@ -16,7 +16,11 @@ async function installMac(page: Page, status: 'granted' | 'denied' = 'denied', g
   await page.addInitScript(({ status, grantOnRequest }) => {
     Object.defineProperty(navigator, 'platform', { configurable: true, value: 'MacIntel' });
     Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, value: 0 });
-    localStorage.setItem('fastdict.v1.preferences', JSON.stringify({ sourceLang: 'auto', targetLang: 'zh-CN', ocrLang: 'eng', autoTranslate: false, activeProviderId: 'openai' }));
+    // Permission/capture scenarios use an existing local service. First-launch
+    // onboarding is covered separately without seeded provider metadata.
+    const provider = { id: 'mac-test-local', name: 'Mac local fixture', kind: 'openai', baseUrl: 'http://localhost:11434/v1', model: 'test-local-model', hasKey: false };
+    localStorage.setItem('fastdict.v1.providers', JSON.stringify([provider]));
+    localStorage.setItem('fastdict.v1.preferences', JSON.stringify({ sourceLang: 'auto', targetLang: 'zh-CN', ocrLang: 'eng', autoTranslate: false, activeProviderId: provider.id }));
     const callbacks = new Map<number, (event: unknown) => void>();
     const listeners = new Map<string, Set<number>>();
     let nextId = 1;
@@ -44,6 +48,7 @@ async function installMac(page: Page, status: 'granted' | 'denied' = 'denied', g
           if (command === 'get_screen_permission') return permission();
           if (command === 'request_screen_permission') { if (grantOnRequest) permissionStatus = 'granted'; return permission(); }
           if (command === 'get_api_key') return null;
+          if (command === 'get_desktop_preferences') return { closeAction: 'quit', launchAtLogin: false, trayAvailable: true, autostartAvailable: true };
           if (command === 'read_clipboard') return 'Mac clipboard text';
           if (command === 'get_shortcut_status') return { captureShortcut: 'Alt+Super+S', clipboardShortcut: 'Alt+Super+V', quitShortcut: 'Alt+Super+Q', platform: 'macos', error: null };
           if (['frontend_ready', 'report_boot_error', 'open_screen_permission_settings', 'start_capture', 'hide_window', 'expand_window', 'quit_app'].includes(command)) return;
@@ -92,7 +97,7 @@ test('requests permission only on an explicit action, opens settings and recheck
   const panel = page.getByRole('region', { name: 'macOS 屏幕录制权限' });
   await panel.getByRole('button', { name: '授予录屏权限', exact: true }).click();
   await expect.poll(async () => (await calls(page, 'request_screen_permission')).length).toBe(1);
-  await expect(panel).toContainText('请在系统设置中允许轻译录屏');
+  await expect(panel).toContainText(/请在系统设置中允许\s*FastLingo\s*录屏/);
   await panel.getByRole('button', { name: '打开系统设置', exact: true }).click();
   await expect.poll(async () => (await calls(page, 'open_screen_permission_settings')).length).toBe(1);
   await page.evaluate(() => (window as unknown as { e2eMac: MacFixture }).e2eMac.setPermission('granted'));
@@ -121,7 +126,7 @@ test('updates a successful permission request immediately and respects menu bar 
   await expect(page.locator('.shortcut-row').filter({ hasText: '桌面全局截图翻译' }).locator('kbd')).toHaveText('⌥⌘S');
   await expect(page.locator('.shortcut-row').filter({ hasText: '桌面全局剪贴板翻译' }).locator('kbd')).toHaveText('⌥⌘V');
   await expect(page.locator('.mac-quit-hint')).toHaveText('⌘Q / ⌥⌘Q');
-  await page.getByRole('button', { name: '退出轻译', exact: true }).click();
+  await page.getByRole('button', { name: /^退出\s*FastLingo$/ }).click();
   await expect.poll(async () => (await calls(page, 'quit_app')).length).toBe(1);
 });
 

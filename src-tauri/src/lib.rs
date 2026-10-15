@@ -2,6 +2,7 @@ mod secrets;
 mod diagnostics;
 mod macos;
 mod mobile;
+mod desktop_preferences;
 #[cfg(desktop)]
 mod capture;
 #[cfg(desktop)]
@@ -129,6 +130,7 @@ mod desktop {
     }
 
     pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+        desktop_preferences::initialize(app.handle());
         diagnostics::initialize(app.handle());
         #[cfg(target_os = "macos")]
         app.set_menu(macos::application_menu(app.handle())?)?;
@@ -145,11 +147,11 @@ mod desktop {
         let screenshot = MenuItem::with_id(app, "capture", "截图翻译", true, None::<&str>)?;
         let sidebar = MenuItem::with_id(app, "sidebar", "打开翻译侧栏", true, None::<&str>)?;
         let preferences = MenuItem::with_id(app, "preferences", "设置…", true, None::<&str>)?;
-        let quit = MenuItem::with_id(app, "quit", "退出 FastDict", true, None::<&str>)?;
+        let quit = MenuItem::with_id(app, "quit", "退出 FastLingo", true, None::<&str>)?;
         let menu = Menu::with_items(app, &[&screenshot, &show, &sidebar, &preferences, &quit])?;
         let mut tray = TrayIconBuilder::with_id("fastdict")
             .menu(&menu)
-            .tooltip("FastDict · 截图与剪贴板翻译")
+            .tooltip("FastLingo · 截图与剪贴板翻译")
             .show_menu_on_left_click(cfg!(target_os = "macos"))
             .on_tray_icon_event(|tray, event| {
                 #[cfg(not(target_os = "macos"))]
@@ -407,7 +409,7 @@ fn frontend_ready(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), St
             let _ = app.emit_to("main", "fastdict://navigate", "settings");
         }
     }
-    eprintln!("FastDict: main frontend ready");
+    eprintln!("FastLingo: main frontend ready");
     diagnostics::main_ready(&app);
     Ok(())
 }
@@ -513,6 +515,7 @@ pub fn run() {
     #[cfg(desktop)]
     let builder = builder
         .manage(desktop::DesktopState::default())
+        .manage(desktop_preferences::PreferencesState::default())
         .manage(capture::CaptureState::default())
         .on_menu_event(desktop::menu_event)
         .plugin(tauri_plugin_global_shortcut::Builder::new().build());
@@ -525,6 +528,7 @@ pub fn run() {
             report_boot_error, quit_app,
             get_screen_permission, request_screen_permission, open_screen_permission_settings,
             configure_shortcuts, get_shortcut_status,
+            desktop_preferences::get_desktop_preferences, desktop_preferences::set_desktop_preferences,
             secrets::save_api_key, secrets::get_api_key, secrets::delete_api_key,
             mobile::mobile_pick_image, mobile::mobile_share_text,
         ])
@@ -543,15 +547,9 @@ pub fn run() {
             #[cfg(desktop)]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
-                    #[cfg(target_os = "macos")]
-                    {
-                        let state = window.app_handle().state::<desktop::DesktopState>();
-                        if state.tray_ready.load(std::sync::atomic::Ordering::SeqCst)
-                            && state.frontend_ready.load(std::sync::atomic::Ordering::SeqCst) {
-                            api.prevent_close();
-                            let _ = window.hide();
-                            return;
-                        }
+                    if desktop_preferences::should_hide_on_close(window.app_handle()) && window.hide().is_ok() {
+                        api.prevent_close();
+                        return;
                     }
                     // A native titlebar always provides a reliable exit, even if
                     // the frontend failed before registering its controls.
@@ -566,7 +564,7 @@ pub fn run() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("启动 FastDict 失败");
+        .expect("启动 FastLingo 失败");
     app.run(|app, event| {
         #[cfg(target_os = "macos")]
         if let tauri::RunEvent::Reopen { .. } = event {

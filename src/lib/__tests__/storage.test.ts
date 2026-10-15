@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HistoryItem, Provider } from '../../types';
-import { addHistory, clearHistory, DEFAULT_PREFERENCES, deleteApiKey, getApiKey, getDefaultProviders, HISTORY_LIMIT, loadHistory, loadPreferences, loadProviders, saveApiKey, saveHistory, savePreferences, saveProviders } from '../storage';
+import { addHistory, clearHistory, DEFAULT_PREFERENCES, deleteApiKey, getApiKey, HISTORY_LIMIT, loadHistory, loadPreferences, loadProviders, saveApiKey, saveHistory, savePreferences, saveProviders } from '../storage';
+import { PROVIDER_PRESETS } from '../catalog';
 
 let values: Map<string, string>;
 beforeEach(() => {
@@ -13,15 +14,41 @@ function history(index: number): HistoryItem {
 }
 
 describe('local metadata and key storage', () => {
+  const providerFixture = (): Provider => ({ ...PROVIDER_PRESETS[0], hasKey: false });
+  it('starts with no provider or active service without writing startup defaults', () => {
+    expect(loadProviders()).toEqual([]);
+    expect(loadPreferences().activeProviderId).toBe('');
+    expect(values.size).toBe(0);
+    // Templates stay available for explicit user selection, never auto-install.
+    expect(PROVIDER_PRESETS.length).toBeGreaterThan(0);
+  });
   it('recovers from missing or malformed settings without mutating defaults', () => {
     expect(loadPreferences()).toEqual(DEFAULT_PREFERENCES);
     values.set('fastdict.v1.preferences', '{invalid');
     expect(loadPreferences()).toEqual(DEFAULT_PREFERENCES);
-    const providers = getDefaultProviders(); providers[0].name = 'changed';
-    expect(getDefaultProviders()[0].name).toBe('OpenAI');
+    const preferences = loadPreferences(); preferences.targetLang = 'changed';
+    expect(DEFAULT_PREFERENCES.targetLang).toBe('zh-CN');
+  });
+  it('preserves existing providers, active selection and original bytes after the empty-default upgrade', () => {
+    const providers = [providerFixture(), { ...providerFixture(), id: 'custom-existing', name: 'Existing API', baseUrl: 'https://example.org/v1' }];
+    const savedProviders = JSON.stringify(providers);
+    const savedPreferences = JSON.stringify({ ...DEFAULT_PREFERENCES, activeProviderId: 'custom-existing' });
+    values.set('fastdict.v1.providers', savedProviders);
+    values.set('fastdict.v1.preferences', savedPreferences);
+    expect(loadProviders()).toEqual(providers);
+    expect(loadPreferences().activeProviderId).toBe('custom-existing');
+    expect(values.get('fastdict.v1.providers')).toBe(savedProviders);
+    expect(values.get('fastdict.v1.preferences')).toBe(savedPreferences);
+  });
+  it('never overwrites unreadable provider data with the empty onboarding state', () => {
+    const original = '{broken providers';
+    values.set('fastdict.v1.providers', original);
+    expect(loadProviders()).toEqual([]);
+    expect(() => saveProviders([])).toThrow('原有数据已保留');
+    expect(values.get('fastdict.v1.providers')).toBe(original);
   });
   it('persists configuration metadata but strips unexpected key fields', async () => {
-    const provider = { ...getDefaultProviders()[0], id: 'session-test', apiKey: 'secret-value', key: 'another-secret' } as Provider;
+    const provider = { ...providerFixture(), id: 'session-test', apiKey: 'secret-value', key: 'another-secret' } as Provider;
     await saveApiKey(provider.id, 'secret-value');
     saveProviders([provider]);
     const stored = [...values.values()].join('');
@@ -32,7 +59,7 @@ describe('local metadata and key storage', () => {
     expect(await getApiKey(provider.id)).toBeNull(); expect(loadProviders()[0].hasKey).toBe(false);
   });
   it('does not trust a persisted hasKey flag in the browser or duplicate/invalid provider IDs', () => {
-    const provider = { ...getDefaultProviders()[0], hasKey: true };
+    const provider = { ...providerFixture(), hasKey: true };
     values.set('fastdict.v1.providers', JSON.stringify([provider, provider, { ...provider, id: '../../bad' }, { ...provider, id: 'unknown', kind: 'fake' }]));
     expect(loadProviders()).toEqual([{ ...provider, hasKey: false }]);
   });

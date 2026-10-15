@@ -99,7 +99,7 @@ pub fn preload(app: &AppHandle) -> Result<(), String> {
     if app.get_webview_window(OVERLAY_LABEL).is_some() { return Ok(()); }
     let route = format!("index.html?capture=1&build={}", env!("CARGO_PKG_VERSION"));
     WebviewWindowBuilder::new(app, OVERLAY_LABEL, WebviewUrl::App(route.into()))
-        .title("FastDict · 框选截图")
+        .title("FastLingo · 框选截图")
         .decorations(false)
         .shadow(false)
         .resizable(false)
@@ -203,7 +203,7 @@ pub fn overlay_ready(app: AppHandle, window: WebviewWindow) -> Result<(), String
         inner.active.as_ref().filter(|active| active.frame.is_some() && !active.visible && !active.finishing).map(|active| active.id)
     };
     if let Some(id) = pending { emit_start(&app, id)?; }
-    eprintln!("FastDict: capture overlay ready");
+    eprintln!("FastLingo: capture overlay ready");
     Ok(())
 }
 

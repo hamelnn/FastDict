@@ -1,5 +1,7 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { createServer, type Server, type ServerResponse } from 'node:http';
+import { mkdir } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import type { AddressInfo, Socket } from 'node:net';
 
 interface ApiRequest {
@@ -118,6 +120,48 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   const dimensions = await page.evaluate(() => ({ width: window.innerWidth, scroll: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) }));
   expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.width + 1);
 }
+
+test('first launch has zero services and choosing a template does not save until confirmed', async ({ page }) => {
+  const guide = page.getByRole('region', { name: '添加翻译服务引导' });
+  await expect(guide.getByRole('heading', { name: '添加你的第一个翻译服务' })).toBeVisible();
+  await expect(page.locator('.provider-row')).toHaveCount(0);
+  await expect(page.getByLabel('翻译服务', { exact: true })).toBeDisabled();
+  await expect(page.getByLabel('翻译服务', { exact: true })).toContainText('请先添加服务');
+  expect(await page.evaluate(() => localStorage.getItem('fastdict.v1.providers'))).toBeNull();
+  await mkdir(resolve('native-test-results'), { recursive: true });
+  await page.screenshot({ path: resolve('native-test-results/fastlingo-onboarding.png'), fullPage: true });
+  await guide.getByRole('button', { name: '添加翻译服务', exact: true }).click();
+  await page.getByRole('dialog', { name: '添加翻译服务', exact: true }).getByRole('button', { name: /本地 Ollama/ }).click();
+  const editor = page.getByRole('dialog', { name: 'API 服务配置', exact: true });
+  await expect(editor).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('fastdict.v1.providers'))).toBeNull();
+  await editor.getByRole('button', { name: '取消', exact: true }).click();
+  await page.reload();
+  await expect(guide).toBeVisible();
+  await expect(page.locator('.provider-row')).toHaveCount(0);
+  await navigate(page, '偏好设置');
+  const desktop = page.getByRole('region', { name: '桌面行为' });
+  await expect(desktop.getByLabel('关闭主窗口时', { exact: true })).toBeDisabled();
+  await expect(desktop.getByRole('switch', { name: '开机启动', exact: true })).toBeDisabled();
+  expect(requests).toEqual([]);
+});
+
+test('removing the last explicitly configured service returns to onboarding after reload', async ({ page }) => {
+  await configureLocalApi(page);
+  await expect(page.getByRole('region', { name: '添加翻译服务引导' })).toHaveCount(0);
+  await navigate(page, '偏好设置');
+  await page.locator('.settings-provider').filter({ hasText: '本机测试模型' }).click();
+  const editor = page.getByRole('dialog', { name: 'API 服务配置', exact: true });
+  await editor.getByRole('button', { name: '移除服务', exact: true }).click();
+  await editor.getByRole('button', { name: '确认移除', exact: true }).click();
+  await expect(editor).toBeHidden();
+  await expect(page.locator('.settings-provider')).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('region', { name: '添加翻译服务引导' })).toBeVisible();
+  await expect(page.locator('.provider-row')).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('fastdict.v1.providers') || 'null'))).toEqual([]);
+  expect(requests).toEqual([]);
+});
 
 test('configures a keyless local API, renders streamed text immediately, and restores history', async ({ page }, info) => {
   await configureLocalApi(page);

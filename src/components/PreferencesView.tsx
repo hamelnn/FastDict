@@ -3,6 +3,7 @@ import type { Preferences, Provider } from '../types';
 import { OCR_LANGUAGES } from '../lib/catalog';
 import { isMobile, isNative, isNativeMac, isNativeWindows, operatingSystem, shortcutLabels } from '../lib/platform';
 import { MacScreenPermissionPanel, type MacScreenPermissionState } from './MacScreenPermission';
+import { DesktopPreferencesPanel } from './DesktopPreferencesPanel';
 
 interface Props {
   preferences: Preferences;
@@ -46,6 +47,7 @@ export function PreferencesView({
         </div>
         <p className="section-description">支持 OpenAI 兼容接口、Anthropic 和 Gemini。</p>
         <div className="settings-providers">
+          {!providers.length && <div className="settings-provider-empty"><strong>尚未添加翻译服务</strong><p>点击“添加服务”，选择模板或填写自定义 API。保存后即可开始翻译。</p></div>}
           {providers.map((provider) => (
             <button key={provider.id} className="settings-provider" onClick={() => onEditProvider(provider)}>
               <span className={`provider-avatar provider-${provider.kind}`}>{provider.name.slice(0, 1)}</span>
@@ -76,6 +78,7 @@ export function PreferencesView({
           </span>
         </div>
       </section>
+      {!isMobile && <DesktopPreferencesPanel />}
       <section className="settings-section">
         <div className="section-title">
           <h2>捕获与识别</h2>
@@ -133,11 +136,11 @@ export function PreferencesView({
           <>
             <ol className="mobile-quickstart">
               <li><span>1</span><div><strong>截取需要翻译的内容</strong><p>使用手机的系统截图方式保存图片。</p></div></li>
-              <li><span>2</span><div><strong>回到轻译，选取截图</strong><p>从相册选择刚才的截图，在本机识别文字。</p></div></li>
+              <li><span>2</span><div><strong>回到 FastLingo，选取截图</strong><p>从相册选择刚才的截图，在本机识别文字。</p></div></li>
               <li><span>3</span><div><strong>阅读、复制或分享译文</strong><p>开启自动翻译后，识别完成即开始翻译。</p></div></li>
             </ol>
             <button className="button secondary" onClick={onCapture}><ImagePlus size={17} />选取截图</button>
-            <p className="platform-note">也可在其他应用复制文字，然后回到轻译点击“粘贴文本”。只有你选中的图片会在本机识别，识别文字会发送至所选翻译服务。</p>
+            <p className="platform-note">也可在其他应用复制文字，然后回到 FastLingo 点击“粘贴文本”。只有你选中的图片会在本机识别，识别文字会发送至所选翻译服务。</p>
           </>
         ) : <>
         <div className="shortcut-row">
@@ -160,13 +163,13 @@ export function PreferencesView({
           <div className="shortcut-row">
             <span>退出桌面应用{isNativeMac && <small className="mac-quit-hint">⌘Q / ⌥⌘Q</small>}</span>
             <button className="button secondary small" onClick={onQuit}>
-              退出轻译
+              退出 FastLingo
             </button>
           </div>
         )}
         <p className="platform-note">
           {isNativeMac
-            ? '首次截图需开启屏幕录制权限。隐藏窗口后可从菜单栏重新打开轻译；⌘Q 退出应用，⌥⌘Q 可立即退出。'
+            ? '首次截图需开启屏幕录制权限。隐藏窗口后可从菜单栏重新打开 FastLingo；⌘Q 退出应用，⌥⌘Q 可立即退出。'
             : '桌面应用支持全局快捷键，框选后松开鼠标即翻译。网页预览需选择分享内容；iOS / Android 请粘贴文字或导入系统截图。移动端系统分享扩展尚未接入。'}
         </p>
         </>}

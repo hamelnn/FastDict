@@ -1,6 +1,6 @@
 import type { HistoryItem, Preferences, Provider, ProviderKind } from '../types';
 import { isNative } from './platform';
-import { OCR_LANGUAGES, PROVIDER_PRESETS } from './catalog';
+import { OCR_LANGUAGES } from './catalog';
 
 const STORAGE_PREFIX = 'fastdict.v1.';
 export const HISTORY_LIMIT = 100;
@@ -38,17 +38,8 @@ function preferenceOcrLanguage(value: unknown): string {
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
-  sourceLang: 'auto', targetLang: 'zh-CN', ocrLang: 'eng', autoTranslate: true, activeProviderId: 'openai',
+  sourceLang: 'auto', targetLang: 'zh-CN', ocrLang: 'eng', autoTranslate: true, activeProviderId: '',
 };
-
-export function getDefaultProviders(): Provider[] {
-  const defaults = new Set(['openai', 'deepseek', 'anthropic', 'gemini']);
-  return PROVIDER_PRESETS.filter(preset => defaults.has(preset.id)).map(preset => ({
-    ...preset,
-    name: preset.id === 'gemini' ? 'Gemini' : preset.name,
-    hasKey: false,
-  }));
-}
 
 function read(key: StorageArea): unknown {
   try {
@@ -93,7 +84,7 @@ function providerMetadata(value: unknown): Provider | null {
 
 export function loadProviders(): Provider[] {
   const saved = read('providers');
-  if (!Array.isArray(saved)) return getDefaultProviders();
+  if (!Array.isArray(saved)) return [];
   const seen = new Set<string>();
   return saved.flatMap(value => {
     const item = providerMetadata(value);

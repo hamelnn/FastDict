@@ -7,6 +7,8 @@ import { createHash } from 'node:crypto';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const releaseVersion = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version;
 const appConfig = JSON.parse(await readFile(join(root, 'src-tauri/tauri.conf.json'), 'utf8'));
+const executableName = `${appConfig.productName}.exe`;
+const archiveName = `${appConfig.productName}-Windows-x64.zip`;
 if (releaseVersion !== appConfig.version) throw new Error('Frontend and native application versions do not match.');
 const tools = join(root, '.build-tools');
 const exists = async path => { try { await stat(path); return true; } catch { return false; } };
@@ -45,9 +47,9 @@ try {
 }
 const output = join(root, 'release');
 await mkdir(output, {recursive:true});
-const exe = join(output, 'FastDict.exe');
+const exe = join(output, executableName);
 await copyFile(join(root, 'src-tauri/target', target, 'release/fastdict.exe'), exe);
-const files = ['FastDict.exe', 'THIRD_PARTY_NOTICES.md', 'README-Windows.txt'];
+const files = [executableName, 'THIRD_PARTY_NOTICES.md', 'README-Windows.txt'];
 // Include MinGW runtime DLLs only when the final executable actually imports them.
 const inspection = spawnSync('objdump', ['-p', exe], { env, encoding:'utf8', windowsHide:true, maxBuffer:64*1024*1024 });
 if (target.endsWith('-gnu') && inspection.status !== 0) throw new Error('Unable to inspect Windows DLL dependencies. Ensure MinGW objdump is available.');
@@ -67,16 +69,16 @@ if (inspection.status === 0) {
   }
 }
 await copyFile(join(root,'THIRD_PARTY_NOTICES.md'),join(output,'THIRD_PARTY_NOTICES.md'));
-await writeFile(join(output,'README-Windows.txt'), `轻译 FastDict ${releaseVersion} — Windows 桌面应用\n\n1. 解压整个 ZIP，保持 FastDict.exe 和附带 DLL 在同一文件夹，再双击 FastDict.exe。\n2. 首次打开，在偏好设置里填写翻译服务、API 地址、模型和 API Key。\n3. 在任意应用按 Ctrl+Shift+S，拖动框选文字，松开鼠标。\n4. 侧栏自动执行本地 OCR，并逐字显示 API 返回的译文。\n\nCtrl+Shift+D：翻译已经复制的文字。\nEsc：取消框选或当前翻译。\nCtrl+Alt+Q：退出应用（原生快捷键，不依赖页面）。\n系统标题栏的 X：完全退出。界面内“隐藏到托盘”：保持后台运行。\n托盘右键：重新打开或退出。\n\n升级保留原有设置、历史和系统凭据中的 API Key。\n运行需要 Windows 10/11 与 Microsoft Edge WebView2 Runtime。\nOCR 资源内置；翻译需要可用的 API 及网络。\n本地构建未签名。\n`, 'utf8');
-run(join(process.env.SystemRoot || 'C:/Windows','System32/tar.exe'), ['-a','-c','-f',join(output,'FastDict-Windows-x64.zip'),'-C',output,...files]);
-const versionedArchive = `FastDict-Windows-x64-${releaseVersion}.zip`;
-await copyFile(join(output,'FastDict-Windows-x64.zip'),join(output,versionedArchive));
+await writeFile(join(output,'README-Windows.txt'), `${appConfig.productName} ${releaseVersion} — Windows 桌面应用\n\n1. 解压整个 ZIP，保持 ${executableName} 和附带 DLL 在同一文件夹，再双击 ${executableName}。\n2. 首次打开，在偏好设置里填写翻译服务、API 地址、模型和 API Key。\n3. 在任意应用按 Ctrl+Shift+S，拖动框选文字，松开鼠标。\n4. 侧栏自动执行本地 OCR，并逐字显示 API 返回的译文。\n\nCtrl+Shift+D：翻译已经复制的文字。\nEsc：取消框选或当前翻译。\nCtrl+Alt+Q：退出应用（原生快捷键，不依赖页面）。\n系统标题栏的 X：默认直接退出，可在偏好设置改为最小化到托盘。界面内“隐藏到托盘”：保持后台运行。\n托盘右键：重新打开或退出。开机启动默认关闭，可在偏好设置开启。\n\n升级保留原有设置、历史和系统凭据中的 API Key。\n运行需要 Windows 10/11 与 Microsoft Edge WebView2 Runtime。\nOCR 资源内置；翻译需要可用的 API 及网络。\n本地构建未签名。\n`, 'utf8');
+run(join(process.env.SystemRoot || 'C:/Windows','System32/tar.exe'), ['-a','-c','-f',join(output,archiveName),'-C',output,...files]);
+const versionedArchive = `${appConfig.productName}-Windows-x64-${releaseVersion}.zip`;
+await copyFile(join(output,archiveName),join(output,versionedArchive));
 const manifest = { version:releaseVersion, target, artifacts:[] };
-for (const name of ['FastDict.exe','FastDict-Windows-x64.zip',versionedArchive]) {
+for (const name of [executableName,archiveName,versionedArchive]) {
   const bytes = await readFile(join(output,name)); manifest.artifacts.push({name,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')});
 }
 if (process.argv.includes('--installer')) {
-  const resources = Object.fromEntries(files.filter(name => name !== 'FastDict.exe' && name !== 'WebView2Loader.dll').map(name => [join(output, name), name]));
+  const resources = Object.fromEntries(files.filter(name => name !== executableName && name !== 'WebView2Loader.dll').map(name => [join(output, name), name]));
   // Tauri includes GNU's WebView2Loader from the target directory itself.
   // Other imported runtime DLLs and notices must also ship in the installer.
   const installerConfig = { bundle: {

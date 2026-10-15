@@ -82,6 +82,7 @@ async function installEnvironment(page: Page, storageFault: StorageFault = 'none
           }
           if (command === 'plugin:event|unlisten') { listeners.get(args.event as string)?.delete(args.eventId as number); return; }
           if (command === 'get_api_key') return null;
+          if (command === 'get_desktop_preferences') return { closeAction: 'quit', launchAtLogin: false, trayAvailable: true, autostartAvailable: true };
           if (command === 'get_shortcut_status') return { captureShortcut: 'Ctrl+Shift+S', clipboardShortcut: 'Ctrl+Shift+D', error: null };
           if (['frontend_ready', 'report_boot_error', 'quit_app', 'hide_window', 'expand_window'].includes(command)) return;
           throw new Error(`Unexpected IPC command in startup test: ${command}`);
@@ -164,10 +165,15 @@ test('boots production assets and CSP on the Windows Tauri origin without a dev 
   const served = await serveProduction(context);
   await page.goto(productionOrigin);
   await expectHealthyBoot(page);
+  await expect(page.getByRole('region', { name: '添加翻译服务引导' })).toBeVisible();
+  await expect(page.locator('.provider-row')).toHaveCount(0);
+  await expect(page.getByLabel('翻译服务', { exact: true })).toBeDisabled();
+  expect(await bootCalls(page, 'get_api_key')).toEqual([]);
+  expect(await bootCalls(page, 'set_desktop_preferences')).toEqual([]);
   expect(served.responses.some(response => response.path === appPath && response.contentType === 'text/javascript')).toBe(true);
   expect(await page.evaluate(() => (window as unknown as { e2eBoot: BootTestState }).e2eBoot.writes)).toEqual([]);
   await page.getByRole('button', { name: /^偏好设置/ }).click();
-  await page.getByRole('button', { name: '退出轻译', exact: true }).click();
+  await page.getByRole('button', { name: /^退出\s*FastLingo$/ }).click();
   await expect.poll(async () => (await bootCalls(page, 'quit_app')).length).toBe(1);
 });
 
@@ -178,6 +184,9 @@ test('restores an existing normal profile without rewriting settings, providers 
   await expectHealthyBoot(page);
   await expect(page.getByLabel('源语言', { exact: true })).toHaveValue('en');
   await expect(page.getByLabel('目标语言', { exact: true })).toHaveValue('ja');
+  await expect(page.getByRole('region', { name: '添加翻译服务引导' })).toHaveCount(0);
+  await expect(page.locator('.provider-row')).toHaveCount(1);
+  await expect(page.getByLabel('翻译服务', { exact: true })).toHaveValue('restored-local');
   const retained = await page.evaluate(keys => {
     const state = (window as unknown as { e2eBoot: BootTestState }).e2eBoot;
     return { values: Object.fromEntries(keys.map(key => [key, state.rawRead(key)])), writes: state.writes };

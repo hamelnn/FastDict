@@ -142,7 +142,7 @@ svg {
 .brand {
   text-decoration: none;
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   padding-left: 8px;
   margin-bottom: 32px;
@@ -152,6 +152,7 @@ svg {
   color: #fff;
   width: 42px;
   height: 42px;
+  flex-shrink: 0;
   display: grid;
   place-items: center;
   border-radius: 13px;
@@ -159,10 +160,11 @@ svg {
 }
 .brand strong {
   display: block;
-  font-size: 25px;
+  font-size: 22px;
   font-weight: 650;
   line-height: 1.3;
-  letter-spacing: 1px;
+  letter-spacing: -0.6px;
+  white-space: nowrap;
 }
 .brand-dot {
   color: var(--green);
@@ -170,11 +172,46 @@ svg {
 }
 .brand small {
   display: block;
-  font-size: 8px;
+  font-size: 7px;
   color: #819187;
-  letter-spacing: 2.8px;
+  letter-spacing: 0.8px;
   font-weight: 600;
   margin-top: 2px;
+}
+.provider-empty {
+  padding: 10px 12px;
+  color: #7e9074;
+  font-size: 11px;
+  line-height: 1.9;
+}
+.provider-empty > span { font-size: 10px; color: #97a68f; }
+.provider-onboarding {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 19px;
+  margin-bottom: 20px;
+  border: 1px solid #dce8d7;
+  border-radius: 13px;
+  background: #eff5ea;
+}
+.onboarding-icon { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; color: var(--green); border-radius: 12px; background: #e1ecd9; }
+.provider-onboarding > div { flex: 1; }
+.provider-onboarding h2 { font-size: 15px; color: #345f43; }
+.provider-onboarding p { margin-top: 6px; font-size: 11px; color: #7e9171; line-height: 1.8; }
+.settings-provider-empty { grid-column: 1 / -1; padding: 18px; background: #f7faf4; border: 1px dashed #dce6d5; border-radius: 9px; }
+.settings-provider-empty strong { color: #6f8661; font-size: 12px; font-weight: 500; }
+.settings-provider-empty p { font-size: 11px; color: #8d9d80; line-height: 1.8; margin-top: 6px; }
+.desktop-setting-note { color: #92774d; font-size: 11px; line-height: 1.8; margin: 0 0 12px; }
+.desktop-setting-status { display: flex; align-items: center; gap: 7px; color: #68865a; font-size: 11px; line-height: 1.8; margin-top: 10px; }
+.desktop-setting-error { display: flex; align-items: center; justify-content: space-between; gap: 14px; color: #a26246; font-size: 11px; line-height: 1.8; margin-top: 12px; }
+.desktop-setting-error .text-button { color: #886c50; white-space: nowrap; }
+.desktop-preferences select:disabled { opacity: 0.6; cursor: default; }
+@media (max-width: 600px) {
+  .provider-onboarding { flex-wrap: wrap; gap: 12px; padding: 16px; }
+  .provider-onboarding > div { min-width: 160px; }
+  .provider-onboarding > .button { width: 100%; }
+  .desktop-preferences .setting-row { flex-wrap: wrap; }
 }
 .sidebar-caption {
   font-size: 10px;
@@ -2156,7 +2193,7 @@ svg {
   min-height: 44px;
 }
 .mobile-brand .brand-mark { width: 38px; height: 38px; border-radius: 12px; }
-.mobile-brand strong { display: block; font-size: 23px; font-weight: 650; line-height: 1.2; letter-spacing: 1px; }
+.mobile-brand strong { display: block; font-size: 23px; font-weight: 650; line-height: 1.2; letter-spacing: -0.5px; white-space: nowrap; }
 .mobile-brand small { display: block; color: #7d8d75; font-size: 9px; letter-spacing: 1.3px; margin-top: 4px; }
 .mobile-header .availability { display: flex; font-size: 11px; color: #75886b; gap: 6px; }
 .mobile-app .workspace {
@@ -2167,6 +2204,11 @@ svg {
 .mobile-app .intro h1 { font-size: 25px; font-weight: 600; line-height: 1.45; letter-spacing: -0.5px; }
 .mobile-app .intro p,
 .mobile-app .page-heading p { color: #7e8e74; font-size: 13px; line-height: 1.6; margin-top: 6px; }
+.mobile-app .provider-onboarding { gap: 12px; padding: 17px; border-radius: 15px; }
+.mobile-app .provider-onboarding h2 { font-size: 16px; }
+.mobile-app .provider-onboarding p { font-size: 12px; }
+.mobile-app .settings-provider-empty strong { font-size: 14px; }
+.mobile-app .settings-provider-empty p { font-size: 12px; }
 .mobile-app button,
 .mobile-app select,
 .mobile-app input:not([type='checkbox']) { min-height: 44px; }
