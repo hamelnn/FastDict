@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import type { HistoryItem, Preferences, Provider, Screenshot } from './types';
 import { isKeylessProvider, translate } from './lib/translation';
+import type { CodexStatus } from './lib/codex';
 import { recognizeImage, warmOcr } from './lib/ocr';
 import {
   captureDisplay,
@@ -94,6 +95,7 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState<Provider | null>(null);
   const [showPresets, setShowPresets] = useState(false);
+  const [codexChecks, setCodexChecks] = useState<Record<string, { model: string; detected: boolean }>>({});
   const [windowMode, setWindowMode] = useState<'sidebar' | 'expanded'>('expanded');
   const [ocrReady, setOcrReady] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -191,7 +193,7 @@ export default function App() {
     if (!isNative) return;
     let disposed = false;
     void Promise.all(
-      providers.map(async (provider) => ({ id: provider.id, hasKey: Boolean(await getApiKey(provider.id)) })),
+      providers.map(async (provider) => ({ id: provider.id, hasKey: provider.kind === 'codex' ? false : Boolean(await getApiKey(provider.id)) })),
     )
       .then((keys) => {
         if (disposed || providersRef.current !== providers) return;
@@ -258,11 +260,14 @@ export default function App() {
       try {
         if (!active) {
           setShowPresets(true);
-          throw new Error('请先添加翻译服务，填写 API 地址、模型和密钥。');
+          throw new Error('请先添加并配置翻译服务。');
         }
-        const apiKey = await getApiKey(active.id);
+        if (active.kind === 'codex' && (!isNative || MOBILE)) {
+          throw new Error('本机 Codex 仅支持桌面应用，请在 Windows 或 macOS 版使用。');
+        }
+        const apiKey = active.kind === 'codex' ? '' : await getApiKey(active.id);
         if (job !== jobRef.current) return;
-        if (!apiKey && !isKeylessProvider(active)) {
+        if (active.kind !== 'codex' && !apiKey && !isKeylessProvider(active)) {
           setEditing(active);
           throw new Error('请为当前服务填写 API Key，然后开始翻译。');
         }
@@ -284,7 +289,7 @@ export default function App() {
           },
         });
         if (job !== jobRef.current) return;
-        if (!result.trim()) throw new Error('API 未返回翻译文本，请检查模型名称或重试。');
+        if (!result.trim()) throw new Error('翻译服务未返回文本，请检查模型名称或重试。');
         setOutput(result);
         const elapsed = performance.now() - started;
         setDuration(elapsed);
@@ -586,9 +591,14 @@ export default function App() {
     }
   };
   const saveProvider = async (provider: Provider, key: string, removeKey: boolean) => {
-    if (removeKey) await deleteApiKey(provider.id);
-    else if (key.trim()) await saveApiKey(provider.id, key.trim());
-    const saved = { ...provider, hasKey: removeKey ? false : Boolean(key.trim() || provider.hasKey) };
+    if (provider.kind === 'codex' && (!isNative || MOBILE)) throw new Error('本机 Codex 仅支持桌面应用，请在 Windows 或 macOS 版使用。');
+    if (provider.kind !== 'codex') {
+      if (removeKey) await deleteApiKey(provider.id);
+      else if (key.trim()) await saveApiKey(provider.id, key.trim());
+    }
+    const saved = provider.kind === 'codex'
+      ? { ...provider, baseUrl: '', hasKey: false }
+      : { ...provider, hasKey: removeKey ? false : Boolean(key.trim() || provider.hasKey) };
     setProviders((current) =>
       current.some((p) => p.id === saved.id)
         ? current.map((p) => (p.id === saved.id ? saved : p))
@@ -597,18 +607,18 @@ export default function App() {
     updatePreferences({ activeProviderId: saved.id });
     setEditing(null);
     setShowPresets(false);
-    notify('API 配置已保存');
+    notify(provider.kind === 'codex' ? 'Codex 配置已保存' : 'API 配置已保存');
   };
   const removeProvider = async (provider: Provider) => {
     try {
-      await deleteApiKey(provider.id);
+      if (provider.kind !== 'codex') await deleteApiKey(provider.id);
       const remaining = providers.filter((p) => p.id !== provider.id);
       setProviders(remaining);
       if (active?.id === provider.id || !remaining.length) {
         updatePreferences({ activeProviderId: remaining[0]?.id || '' });
       }
       setEditing(null);
-      notify('API 配置已移除');
+      notify(provider.kind === 'codex' ? 'Codex 配置已移除' : 'API 配置已移除');
     } catch (e) {
       notify(errorMessage(e));
     }
@@ -626,7 +636,18 @@ export default function App() {
     setMenuOpen(false);
     if (MOBILE) window.scrollTo({ top: 0 });
   };
-  const readyCount = providers.filter((provider) => provider.hasKey || isKeylessProvider(provider)).length;
+  const recordCodexStatus = (provider: Provider, status: CodexStatus | null) => {
+    setCodexChecks(current => ({ ...current, [provider.id]: {
+      model: provider.model.trim(),
+      detected: Boolean(status?.available && status.authenticated && status.authMode === 'chatgpt' && status.modelAvailable),
+    } }));
+  };
+  const codexDetected = (provider: Provider) => isNative && !MOBILE && codexChecks[provider.id]?.model === provider.model && codexChecks[provider.id]?.detected;
+  const readyCount = providers.filter(provider => provider.kind !== 'codex' && (provider.hasKey || isKeylessProvider(provider))).length;
+  const connectionDetected = active?.kind === 'codex' ? codexDetected(active) : readyCount > 0;
+  const connectionLabel = active?.kind === 'codex'
+    ? !isNative || MOBILE ? 'Codex 仅限桌面' : codexDetected(active) ? 'Codex 已检测' : 'Codex 待检测'
+    : readyCount ? (MOBILE ? '已就绪' : '随时就绪') : (MOBILE ? '待配置 API' : '等待连接服务');
 
   return (
     <div
@@ -677,8 +698,8 @@ export default function App() {
           <span>翻译服务</span>
           <button
             className="icon-button"
-            title="添加 API"
-            aria-label="添加 API"
+            title="添加翻译服务"
+            aria-label="添加服务到侧栏"
             onClick={() => {
               setShowPresets(true);
             }}
@@ -687,7 +708,7 @@ export default function App() {
           </button>
         </div>
         <div className="provider-list">
-          {!providers.length && <p className="provider-empty">尚未添加翻译服务<br /><span>点击上方 + 接入自己的 API</span></p>}
+          {!providers.length && <p className="provider-empty">尚未添加翻译服务<br /><span>点击上方 + 选择翻译服务</span></p>}
           {providers.map((provider, index) => (
             <button
               key={provider.id}
@@ -704,7 +725,7 @@ export default function App() {
               {active?.id === provider.id ? (
                 <Check className="provider-check" size={15} />
               ) : (
-                <span className={`connection-dot ${provider.hasKey ? 'connected' : ''}`} />
+                <span className={`connection-dot ${(provider.kind === 'codex' ? codexDetected(provider) : provider.hasKey) ? 'connected' : ''}`} />
               )}
               <span className="sr-only">服务 {index + 1}</span>
             </button>
@@ -741,7 +762,7 @@ export default function App() {
               <span className="brand-mark"><Languages size={22} strokeWidth={1.8} /></span>
               <span><strong>FastLingo</strong><small>{operatingSystem === 'ios' ? 'iOS' : 'ANDROID'}</small></span>
             </a>
-            <span className="availability"><span className={readyCount ? 'status-dot' : 'status-dot unconfigured'} />{readyCount ? '已就绪' : '待配置 API'}</span>
+            <span className="availability"><span className={connectionDetected ? 'status-dot' : 'status-dot unconfigured'} />{connectionLabel}</span>
           </header>
         ) : <header className="topbar" data-tauri-drag-region>
           <div className="breadcrumbs" data-tauri-drag-region>
@@ -760,8 +781,8 @@ export default function App() {
           </div>
           <div className="topbar-right">
             <span className="availability">
-              <span className={readyCount ? 'status-dot' : 'status-dot unconfigured'} />
-              {readyCount ? '随时就绪' : '等待连接 API'}
+              <span className={connectionDetected ? 'status-dot' : 'status-dot unconfigured'} />
+              {connectionLabel}
             </span>
             {isNative && (
               <button
@@ -847,7 +868,7 @@ export default function App() {
                   <span className="onboarding-icon"><Sparkles size={22} strokeWidth={1.6} /></span>
                   <div>
                     <h2>添加你的第一个翻译服务</h2>
-                    <p>选择服务模板或自定义接口，填写自己的 API 地址、模型和密钥，再开始截图翻译。</p>
+                    <p>{isNative && !MOBILE ? '选择 API 服务并填写自己的地址、模型和密钥，或接入已通过 ChatGPT 订阅登录的本机 Codex。' : '选择服务模板或自定义接口，填写自己的 API 地址、模型和密钥，再开始截图翻译。'}</p>
                   </div>
                   <button className="button primary" onClick={() => setShowPresets(true)}><Plus size={16} />添加翻译服务</button>
                 </section>
@@ -1197,7 +1218,7 @@ export default function App() {
               <div className="under-card">
                 <span>
                   <ShieldCheck size={14} />
-                  OCR 本机处理，文本发送至你选择的 API
+                  OCR 本机处理，文本发送至你选择的翻译服务
                 </span>
                 <button className="text-button" onClick={() => chooseView('settings')}>
                   调整识别语言
@@ -1294,6 +1315,7 @@ export default function App() {
           onClose={() => setEditing(null)}
           onSave={saveProvider}
           onRemove={removeProvider}
+          onCodexStatus={recordCodexStatus}
         />
       )}
       {crop && (

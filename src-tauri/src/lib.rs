@@ -3,6 +3,7 @@ mod diagnostics;
 mod macos;
 mod mobile;
 mod desktop_preferences;
+mod codex;
 #[cfg(desktop)]
 mod capture;
 #[cfg(desktop)]
@@ -516,6 +517,7 @@ pub fn run() {
     let builder = builder
         .manage(desktop::DesktopState::default())
         .manage(desktop_preferences::PreferencesState::default())
+        .manage(codex::CodexState::default())
         .manage(capture::CaptureState::default())
         .on_menu_event(desktop::menu_event)
         .plugin(tauri_plugin_global_shortcut::Builder::new().build());
@@ -529,6 +531,7 @@ pub fn run() {
             get_screen_permission, request_screen_permission, open_screen_permission_settings,
             configure_shortcuts, get_shortcut_status,
             desktop_preferences::get_desktop_preferences, desktop_preferences::set_desktop_preferences,
+            codex::get_codex_status, codex::translate_with_codex, codex::cancel_codex_translation,
             secrets::save_api_key, secrets::get_api_key, secrets::delete_api_key,
             mobile::mobile_pick_image, mobile::mobile_share_text,
         ])
@@ -566,6 +569,8 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("启动 FastLingo 失败");
     app.run(|app, event| {
+        #[cfg(desktop)]
+        if matches!(event, tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }) { codex::shutdown(app); }
         #[cfg(target_os = "macos")]
         if let tauri::RunEvent::Reopen { .. } = event {
             if !capture::restore_visible(app) && !capture::is_active(app) {

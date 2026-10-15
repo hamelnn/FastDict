@@ -1,9 +1,21 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowUpRight, Check, LoaderCircle, ShieldCheck, Trash2, X } from 'lucide-react';
 import type { Provider, ProviderKind } from '../types';
 import { PROVIDER_PRESETS } from '../lib/catalog';
 import { isMobile, isNative, isNativeMac, operatingSystem } from '../lib/platform';
 import { validateEndpoint } from '../lib/translation';
+import type { CodexStatus } from '../lib/codex';
+
+const desktopCodex = isNative && !isMobile;
+const desktopOnly = '本机 Codex 仅支持桌面应用，请在 Windows 或 macOS 版使用。';
+
+function codexStatusMessage(status: CodexStatus): string {
+  if (!status.available) return status.message || '未找到可用的本机 Codex，请先安装并登录。';
+  if (status.authMode === 'apikey') return '当前 Codex 使用 API Key 登录。请在 Codex 中改用 ChatGPT 订阅登录，然后重新检测。';
+  if (!status.authenticated || status.authMode !== 'chatgpt') return status.message || 'Codex 尚未通过 ChatGPT 登录，请先在本机 Codex 中完成登录。';
+  if (!status.modelAvailable) return status.message || '已通过 ChatGPT 登录，但模型目录中未找到所选模型。请确认模型名称。';
+  return `已通过 ChatGPT 登录，已发现所选模型${status.version ? `（Codex ${status.version}）` : ''}。实际模型权限以翻译结果为准。`;
+}
 
 export function ProviderPresets({
   onClose,
@@ -32,14 +44,14 @@ export function ProviderPresets({
         <div className="modal-heading">
           <div>
             <h2>添加翻译服务</h2>
-            <p>选择一个服务，或接入自己的 API。</p>
+            <p>{desktopCodex ? '接入自己的 API，或使用本机 Codex 的 GPT 订阅。' : '选择一个服务，或接入自己的 API。'}</p>
           </div>
           <button className="icon-button" aria-label="关闭" onClick={onClose}>
             <X size={20} />
           </button>
         </div>
         <div className="preset-list">
-          {PROVIDER_PRESETS.map((preset) => (
+          {PROVIDER_PRESETS.filter(preset => preset.kind !== 'codex' || desktopCodex).map((preset) => (
             <button
               key={preset.name}
               onClick={() => onChoose({ ...preset, id: crypto.randomUUID(), hasKey: false })}
@@ -48,7 +60,9 @@ export function ProviderPresets({
               <span>
                 <strong>{preset.name}</strong>
                 <small>
-                  {preset.kind === 'openai'
+                  {preset.kind === 'codex'
+                    ? '使用已登录的 ChatGPT 订阅'
+                    : preset.kind === 'openai'
                     ? 'OpenAI 兼容接口'
                     : preset.kind === 'anthropic'
                       ? 'Messages API'
@@ -70,9 +84,10 @@ interface EditorProps {
   onClose: () => void;
   onSave: (provider: Provider, key: string, removeKey: boolean) => Promise<void>;
   onRemove: (provider: Provider) => Promise<void>;
+  onCodexStatus?: (provider: Provider, status: CodexStatus | null) => void;
 }
 
-export function ProviderEditor({ provider, existing, onClose, onSave, onRemove }: EditorProps) {
+export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, onCodexStatus }: EditorProps) {
   const [draft, setDraft] = useState(provider);
   const [key, setKey] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -80,22 +95,48 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove }
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
+  const checkRef = useRef(0);
+  const codex = draft.kind === 'codex';
+  const unsupportedCodex = codex && !desktopCodex;
+  useEffect(() => () => { ++checkRef.current; }, []);
+  const checkCodex = async () => {
+    const request = ++checkRef.current;
+    setChecking(true);
+    setError('');
+    setCodexStatus(null);
+    onCodexStatus?.(draft, null);
+    try {
+      if (!draft.model.trim()) throw new Error('请填写模型名称。');
+      const { getCodexStatus } = await import('../lib/codex');
+      const status = await getCodexStatus(draft.model.trim());
+      if (request !== checkRef.current) return;
+      setCodexStatus(status);
+      onCodexStatus?.(draft, status);
+    } catch (cause) {
+      if (request === checkRef.current) setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (request === checkRef.current) setChecking(false);
+    }
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError('');
     setSaving(true);
     try {
-      validateEndpoint(draft.baseUrl);
+      if (unsupportedCodex) throw new Error(desktopOnly);
+      if (!codex) validateEndpoint(draft.baseUrl);
       if (!draft.name.trim() || !draft.model.trim()) throw new Error('请填写服务名称和模型。');
       await onSave(
         {
           ...draft,
           name: draft.name.trim(),
-          baseUrl: draft.baseUrl.trim().replace(/\/+$/, ''),
+          baseUrl: codex ? '' : draft.baseUrl.trim().replace(/\/+$/, ''),
           model: draft.model.trim(),
         },
-        key,
-        removeKey,
+        codex ? '' : key,
+        codex ? false : removeKey,
       );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -134,7 +175,7 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove }
         className="modal provider-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="API 服务配置"
+        aria-label={codex ? '本机 Codex 配置' : 'API 服务配置'}
         onSubmit={(event) => {
           void submit(event);
         }}
@@ -143,7 +184,7 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove }
         <div className="modal-heading">
           <div>
             <h2>{existing ? '编辑翻译服务' : '添加翻译服务'}</h2>
-            <p>填写地址、模型和密钥即可开始。</p>
+            <p>{codex ? '使用本机已登录的 Codex，无需填写 API Key。' : '填写地址、模型和密钥即可开始。'}</p>
           </div>
           <button
             className="icon-button"
@@ -167,7 +208,7 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove }
             required
           />
         </label>
-        <label className="form-label">
+        {!codex && <><label className="form-label">
           接口类型
           <select
             value={draft.kind}
@@ -191,7 +232,7 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove }
             required
           />
           <small>填写服务基础地址，应用会自动补全接口路径。</small>
-        </label>
+        </label></>}
         <label className="form-label">
           模型名称
           <input
@@ -199,12 +240,31 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove }
             autoCorrect="off"
             spellCheck={false}
             value={draft.model}
-            onChange={(event) => setDraft({ ...draft, model: event.target.value })}
+            onChange={(event) => {
+              const next = { ...draft, model: event.target.value };
+              setDraft(next);
+              if (codex) {
+                ++checkRef.current;
+                setChecking(false);
+                setCodexStatus(null);
+                setError('');
+                onCodexStatus?.(next, null);
+              }
+            }}
             placeholder="填写服务支持的模型名称"
             required
           />
         </label>
-        <label className="form-label">
+        {codex ? (
+          <section className="codex-connection" aria-label="Codex 连接检测" aria-busy={checking}>
+            <p>{unsupportedCodex ? desktopOnly : '请先在本机 Codex 中通过 ChatGPT 订阅登录。FastLingo 不读取或保存你的 Codex 登录凭据。'}</p>
+            <button className="button secondary small" type="button" disabled={checking || saving || unsupportedCodex} onClick={() => { void checkCodex(); }}>
+              {checking && <LoaderCircle size={15} className="spin" />}{checking ? '正在检测' : '检测连接'}
+            </button>
+            {codexStatus && <p className="codex-status" role="status">{codexStatusMessage(codexStatus)}</p>}
+            {!unsupportedCodex && <small>检测仅查询登录状态和模型目录，不发送翻译请求。Codex 会在本次翻译完成后返回译文。</small>}
+          </section>
+        ) : <><label className="form-label">
           API Key{' '}
           <span className="optional-label">
             {provider.hasKey ? '已配置，留空保留原密钥' : '本地模型可留空'}
@@ -251,7 +311,7 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove }
                 ? operatingSystem === 'windows' ? 'Windows 系统凭据库存储' : '仅本次应用会话保存'
                 : '仅当前浏览器会话保存，刷新后需重新输入'}
           </span>
-        </div>
+        </div></>}
         {error && (
           <div className="form-error" role="alert">
             {error}
@@ -275,7 +335,7 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove }
             <button className="button secondary" type="button" onClick={onClose} disabled={saving}>
               取消
             </button>
-            <button className="button primary" type="submit" disabled={saving}>
+            <button className="button primary" type="submit" disabled={saving || checking || unsupportedCodex}>
               {saving ? <LoaderCircle size={16} className="spin" /> : <Check size={16} />}保存配置
             </button>
           </div>

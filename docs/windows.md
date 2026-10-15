@@ -1,5 +1,9 @@
 # FastLingo · Windows 桌面版
 
+0.3.1 新增[本机 Codex（GPT 订阅）](codex.md)：本机 Codex 通过 ChatGPT 登录后，在添加服务时选择该入口，检测连接并保存，默认模型为 `gpt-6-luna`。已修复将 Codex 非致命配置警告误判为工具调用的问题；真实订阅中英翻译和取消已通过原生测试。
+
+0.3.1 共 150 项自动化测试通过。最终便携包已在界面中完成真实 GPT-6 Luna 翻译、Esc 取消和关闭窗口退出，实际进程路径与 ZIP 中可执行文件哈希均已核对；未重新实测托盘、截图与系统自启。
+
 0.3.0 新增：首次启动无翻译服务，点击“添加翻译服务”自行配置；已有配置继续保留。偏好设置可选择关闭主窗口时直接退出或留在托盘，默认直接退出；开机启动默认关闭，仅在用户主动开启后设置。应用已更名 FastLingo，沿用原有应用标识、本地数据目录、存储键和凭据服务。
 
 支持 Windows 10/11 x64。0.3.0 便携包已实际运行并验证关闭行为；NSIS 安装程序已构建，尚未执行安装或覆盖升级实测。产物未签名。
@@ -20,7 +24,7 @@
 
 ## 使用
 
-从 [0.3.0 GitHub Release](https://github.com/hamelnn/FastDict/releases/tag/v0.3.0) 下载 `FastLingo_0.3.0_x64-setup.exe` 或 `FastLingo-Windows-x64-0.3.0.zip`。便携版需解压后运行，并保持 `FastLingo.exe` 与附带 DLL 在同一文件夹。若系统缺少 WebView2 Runtime，请从 [Microsoft 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。
+从 [0.3.1 GitHub Release](https://github.com/hamelnn/FastDict/releases/tag/v0.3.1) 下载 `FastLingo_0.3.1_x64-setup.exe` 或 `FastLingo-Windows-x64-0.3.1.zip`。便携版需解压后运行，并保持 `FastLingo.exe` 与附带 DLL 在同一文件夹。若系统缺少 WebView2 Runtime，请从 [Microsoft 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。
 
 首次打开，在偏好设置添加翻译服务、API 地址、模型和密钥，再选择 OCR 与目标语言。
 

@@ -4,9 +4,11 @@
 
 React + TypeScript 界面，Tauri 2 原生外壳，复用系统 WebView。
 
-Windows 新版本见 [FastLingo 0.3.0 下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.3.0) 和 [Windows 说明](docs/windows.md)。macOS、Android 和 iOS 模拟器现有二进制仍为 [FastDict 0.2.0](https://github.com/hamelnn/FastDict/releases/tag/v0.2.0)；iPhone 真机安装需要另行配置 Apple 签名。
+Windows 新版本见 [FastLingo 0.3.1 下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.3.1) 和 [Windows 说明](docs/windows.md)。macOS、Android 和 iOS 模拟器现有二进制仍为 [FastDict 0.2.0](https://github.com/hamelnn/FastDict/releases/tag/v0.2.0)；iPhone 真机安装需要另行配置 Apple 签名。
 
 0.3.0 将应用更名为 **FastLingo**，首次启动不预置翻译服务，由用户自行添加。桌面偏好可选择关闭后直接退出或留在托盘，并支持开机启动；默认直接退出、开机不自启。更名沿用原有应用标识、数据目录和存储键，兼容已有服务、历史和密钥。
+
+0.3.1 新增[本机 Codex 与 GPT 订阅](docs/codex.md)入口，默认使用 `gpt-6-luna`。需本机 Codex 已通过 ChatGPT 登录；0.3.0 安装包不包含此入口。已修复早期测试包把 Codex 配置警告误判成工具调用的问题，无需调整原文或修改 Codex 配置。
 
 ## 功能
 
@@ -15,6 +17,7 @@ Windows 新版本见 [FastLingo 0.3.0 下载页](https://github.com/hamelnn/Fast
 - **自行配置 API**：首次启动从空服务列表开始，点击“添加翻译服务”配置。
 - **桌面行为**：关闭后退出或留在托盘可选，开机启动默认关闭。
 - **多 API 配置**：支持 OpenAI 兼容、Anthropic 和 Gemini 协议，侧栏切换服务。
+- **桌面订阅翻译**：可选本机 Codex，通过 ChatGPT 订阅翻译，不填写 API Key。
 - **本地 OCR**：内置英文、简体中文、繁体中文、日文、韩文模型，复用识别 Worker。
 - **流式结果**：边生成边显示，支持取消、复制与本地历史。
 - **手机界面**：底部翻译 / 记录 / 设置导航，系统选图、主动粘贴与译文分享。
@@ -23,14 +26,14 @@ Windows 新版本见 [FastLingo 0.3.0 下载页](https://github.com/hamelnn/Fast
 
 | 平台 | 当前状态 | 使用与构建 |
 | --- | --- | --- |
-| Windows x64 | 0.3.0 便携包关闭退出、托盘隐藏/恢复、偏好保留及快捷键退出实测通过；安装程序待验收 | [Windows 说明](docs/windows.md) |
+| Windows x64 | 0.3.1 便携包订阅翻译、取消与关闭退出实测通过；安装程序待验收 | [Windows 说明](docs/windows.md) |
 | macOS | 0.2.0 通用 DMG 和应用 ZIP 已校验，真机流程待验收 | [macOS 说明](docs/macos.md) |
 | iOS | 0.2.0 模拟器编译、安装启动与画面检查通过；真机签名及功能待验收 | [移动端说明](docs/mobile.md) |
 | Android ARM64 | 0.2.0 debug APK 已生成并校验，设备功能待验收 | [移动端说明](docs/mobile.md) |
 
 仓库提供源码；`release/` 为本地构建输出，不随源码提交。完整截图到真实 API 的桌面流程仍需设备验收，详见 [验证范围](docs/validation.md)。
 
-0.3.0 的 121 项自动化测试及构建检查通过。本轮 Windows 实测覆盖关闭行为和托盘恢复；结束时恢复直接退出、自启关闭，再次点击标题栏 X 后窗口与进程均消失。未操作系统自启、未重新手动验收截图完成与取消，也未执行安装器安装或覆盖升级。0.2.1 的截图白屏修复及当时实测记录保留在 [验证范围](docs/validation.md)。
+0.3.1 的 150 项自动化测试及构建检查通过，另已运行真实 GPT-6 Luna 订阅翻译与取消测试。最终 Windows 便携包在界面中正常显示译文、取消翻译并关闭退出；托盘行为沿用 0.3.0 实测基线。未操作系统自启、未重新手动验收截图完成与取消，也未执行安装器安装或覆盖升级。各版本验证记录见 [验证范围](docs/validation.md)。
 
 ## 桌面用法
 

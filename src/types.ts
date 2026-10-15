@@ -1,4 +1,4 @@
-export type ProviderKind = 'openai' | 'anthropic' | 'gemini';
+export type ProviderKind = 'openai' | 'anthropic' | 'gemini' | 'codex';
 export interface Provider { id: string; name: string; kind: ProviderKind; baseUrl: string; model: string; hasKey: boolean; }
 export interface Preferences { sourceLang: string; targetLang: string; ocrLang: string; autoTranslate: boolean; activeProviderId: string; }
 export interface DesktopPreferences {

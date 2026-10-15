@@ -45,7 +45,7 @@ export function PreferencesView({
             添加服务
           </button>
         </div>
-        <p className="section-description">支持 OpenAI 兼容接口、Anthropic 和 Gemini。</p>
+        <p className="section-description">支持 OpenAI 兼容接口、Anthropic 和 Gemini{isNative && !isMobile ? '，也可接入本机 Codex 的 GPT 订阅' : ''}。</p>
         <div className="settings-providers">
           {!providers.length && <div className="settings-provider-empty"><strong>尚未添加翻译服务</strong><p>点击“添加服务”，选择模板或填写自定义 API。保存后即可开始翻译。</p></div>}
           {providers.map((provider) => (
@@ -55,8 +55,8 @@ export function PreferencesView({
                 <strong>{provider.name}</strong>
                 <small>{provider.model}</small>
               </span>
-              <span className={`key-status ${provider.hasKey ? 'key-saved' : ''}`}>
-                {provider.hasKey ? '已配置密钥' : '待配置'}
+              <span className={`key-status ${provider.kind !== 'codex' && provider.hasKey ? 'key-saved' : ''}`}>
+                {provider.kind === 'codex' ? (isNative && !isMobile ? '本机订阅' : '仅桌面可用') : provider.hasKey ? '已配置密钥' : '待配置'}
               </span>
               <MoreHorizontal size={18} />
             </button>

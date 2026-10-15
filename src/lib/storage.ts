@@ -5,7 +5,7 @@ import { OCR_LANGUAGES } from './catalog';
 const STORAGE_PREFIX = 'fastdict.v1.';
 export const HISTORY_LIMIT = 100;
 const sessionKeys = new Map<string, string>();
-const PROVIDER_KINDS = new Set<ProviderKind>(['openai', 'anthropic', 'gemini']);
+const PROVIDER_KINDS = new Set<ProviderKind>(['openai', 'anthropic', 'gemini', 'codex']);
 const PROVIDER_ID = /^[a-zA-Z0-9_-]{1,120}$/;
 const OCR_LANGUAGE_VALUES = new Set(OCR_LANGUAGES.map(language => language.value));
 type StorageArea = 'providers' | 'preferences' | 'history';
@@ -77,8 +77,8 @@ function providerMetadata(value: unknown): Provider | null {
   if (!PROVIDER_ID.test(id) || !PROVIDER_KINDS.has(kind)) return null;
   return {
     id, name: boundedString(item.name, 80), kind,
-    baseUrl: boundedString(item.baseUrl, 2000), model: boundedString(item.model, 200),
-    hasKey: isNative ? item.hasKey === true : sessionKeys.has(id),
+    baseUrl: kind === 'codex' ? '' : boundedString(item.baseUrl, 2000), model: boundedString(item.model, 200),
+    hasKey: kind === 'codex' ? false : isNative ? item.hasKey === true : sessionKeys.has(id),
   };
 }
 

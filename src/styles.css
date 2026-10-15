@@ -328,6 +328,10 @@ svg {
   background: #e4e9f6;
   color: #7383b5;
 }
+.provider-codex {
+  background: #e5eae8;
+  color: #4b6962;
+}
 .provider-copy {
   min-width: 0;
   flex: 1;
@@ -1287,6 +1291,20 @@ svg {
 .form-security svg {
   flex-shrink: 0;
 }
+.codex-connection {
+  margin: 20px 0;
+  padding: 14px;
+  border: 1px solid #dde6d5;
+  border-radius: 9px;
+  background: #f5f8f1;
+  color: #687c5e;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.codex-connection p { margin: 0 0 12px; }
+.codex-connection .codex-status { margin: 12px 0 0; }
+.codex-connection small { display: block; margin-top: 10px; color: #85927c; font-size: 11px; }
 .modal-footer {
   display: flex;
   justify-content: space-between;

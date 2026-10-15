@@ -69,7 +69,7 @@ if (inspection.status === 0) {
   }
 }
 await copyFile(join(root,'THIRD_PARTY_NOTICES.md'),join(output,'THIRD_PARTY_NOTICES.md'));
-await writeFile(join(output,'README-Windows.txt'), `${appConfig.productName} ${releaseVersion} — Windows 桌面应用\n\n1. 解压整个 ZIP，保持 ${executableName} 和附带 DLL 在同一文件夹，再双击 ${executableName}。\n2. 首次打开，在偏好设置里填写翻译服务、API 地址、模型和 API Key。\n3. 在任意应用按 Ctrl+Shift+S，拖动框选文字，松开鼠标。\n4. 侧栏自动执行本地 OCR，并逐字显示 API 返回的译文。\n\nCtrl+Shift+D：翻译已经复制的文字。\nEsc：取消框选或当前翻译。\nCtrl+Alt+Q：退出应用（原生快捷键，不依赖页面）。\n系统标题栏的 X：默认直接退出，可在偏好设置改为最小化到托盘。界面内“隐藏到托盘”：保持后台运行。\n托盘右键：重新打开或退出。开机启动默认关闭，可在偏好设置开启。\n\n升级保留原有设置、历史和系统凭据中的 API Key。\n运行需要 Windows 10/11 与 Microsoft Edge WebView2 Runtime。\nOCR 资源内置；翻译需要可用的 API 及网络。\n本地构建未签名。\n`, 'utf8');
+await writeFile(join(output,'README-Windows.txt'), `${appConfig.productName} ${releaseVersion} — Windows 桌面应用\n\n1. 解压整个 ZIP，保持 ${executableName} 和附带 DLL 在同一文件夹，再双击 ${executableName}。\n2. 首次打开，添加 API 服务并填写地址、模型和密钥；也可选择“本机 Codex（GPT 订阅）”，检测已登录的 Codex，默认模型 gpt-6-luna。\n3. 在任意应用按 Ctrl+Shift+S，拖动框选文字，松开鼠标。\n4. 侧栏自动执行本地 OCR，并逐字显示 API 返回的译文。\n\nCtrl+Shift+D：翻译已经复制的文字。\nEsc：取消框选或当前翻译。\nCtrl+Alt+Q：退出应用（原生快捷键，不依赖页面）。\n系统标题栏的 X：默认直接退出，可在偏好设置改为最小化到托盘。界面内“隐藏到托盘”：保持后台运行。\n托盘右键：重新打开或退出。开机启动默认关闭，可在偏好设置开启。\n\n本机 Codex 入口要求 Codex CLI 0.155 或更新版本通过 ChatGPT 登录，无需填写 API Key。它使用订阅额度，译文在本次翻译完成后返回；iOS/Android不提供此入口。\n\n升级保留原有设置、历史和系统凭据中的 API Key。\n运行需要 Windows 10/11 与 Microsoft Edge WebView2 Runtime。\nOCR 资源内置；翻译需要可用的 API 及网络。\n本地构建未签名。\n`, 'utf8');
 run(join(process.env.SystemRoot || 'C:/Windows','System32/tar.exe'), ['-a','-c','-f',join(output,archiveName),'-C',output,...files]);
 const versionedArchive = `${appConfig.productName}-Windows-x64-${releaseVersion}.zip`;
 await copyFile(join(output,archiveName),join(output,versionedArchive));

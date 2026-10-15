@@ -82,6 +82,7 @@ export function isKeylessProvider(provider: Pick<Provider, 'kind' | 'baseUrl'>):
 }
 
 export function providerEndpoint(provider: Pick<Provider, 'kind' | 'baseUrl' | 'model'>): string {
+  if (provider.kind === 'codex') throw new Error('本机 Codex 通过桌面应用连接，不使用 API 地址。');
   const url = validateEndpoint(provider.baseUrl);
   let path = url.pathname.replace(/\/+$/, '');
   if (provider.kind === 'openai') {
@@ -194,6 +195,10 @@ async function requestFetch(url: string, init: RequestInit): Promise<Response> {
 
 export async function translate(request: TranslationRequest): Promise<string> {
   assertActive(request.signal);
+  if (request.provider.kind === 'codex') {
+    const { translateWithCodex } = await import('./codex');
+    return translateWithCodex(request);
+  }
   const { url, init } = buildTranslationRequest(request);
   let response: Response;
   try { response = await requestFetch(url, init); }

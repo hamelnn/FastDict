@@ -63,6 +63,18 @@ describe('local metadata and key storage', () => {
     values.set('fastdict.v1.providers', JSON.stringify([provider, provider, { ...provider, id: '../../bad' }, { ...provider, id: 'unknown', kind: 'fake' }]));
     expect(loadProviders()).toEqual([{ ...provider, hasKey: false }]);
   });
+  it('loads Codex metadata without an endpoint and discards credential and address fields on save', async () => {
+    const original = { id: 'session-test', name: 'My Codex', kind: 'codex', model: 'gpt-6-luna', hasKey: true, apiKey: 'must-not-persist', authToken: 'must-not-persist' };
+    values.set('fastdict.v1.providers', JSON.stringify([original]));
+    // Even an unrelated in-memory key under the same ID cannot make Codex keyed.
+    await saveApiKey(original.id, 'unrelated-session-key');
+    expect(loadProviders()).toEqual([{ id: original.id, name: original.name, kind: 'codex', model: original.model, baseUrl: '', hasKey: false }]);
+    saveProviders([{ ...loadProviders()[0], baseUrl: 'https://ignored.example', hasKey: true }]);
+    expect(JSON.parse(values.get('fastdict.v1.providers')!)).toEqual(loadProviders());
+    expect(values.get('fastdict.v1.providers')).not.toContain('ignored.example');
+    expect(values.get('fastdict.v1.providers')).not.toContain('must-not-persist');
+    expect(values.get('fastdict.v1.providers')).not.toContain('authToken');
+  });
   it('preserves an intentionally empty provider list', () => {
     saveProviders([]);
     expect(loadProviders()).toEqual([]);
