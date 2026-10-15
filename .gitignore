@@ -1,0 +1,29 @@
+# Dependencies and downloaded tools
+node_modules/
+.build-tools/
+public/ocr/
+
+# Build and test output
+dist/
+release/
+src-tauri/target/
+src-tauri/gen/
+*.tsbuildinfo
+test-results/
+playwright-report/
+native-test-results/
+*.log
+
+# Local configuration and signing material
+.env*
+!.env.example
+*.p12
+*.pfx
+*.mobileprovision
+
+# OS and editor metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vs/

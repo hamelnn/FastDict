@@ -1,0 +1,58 @@
+name: Build macOS universal app
+
+# Opt-in packaging only. This workflow does not create or publish a release.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fastdict-mac-packaging-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos-universal:
+    name: Universal app and DMG
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      # An ad-hoc signature needs no Apple certificate or notarization secrets.
+      # It does not assert an Apple-authenticated publisher or notarization.
+      APPLE_SIGNING_IDENTITY: '-'
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+      - name: Install locked frontend dependencies
+        run: npm ci
+      - name: Run core tests
+        run: npm run test
+      - name: Check build scripts and OCR preparation
+        run: npm run test:scripts
+      - name: Build and verify universal app plus DMG
+        run: npm run macos:build -- --target=universal-apple-darwin
+      # build-macos verifies the architecture slices and signature before export.
+      # .app.zip preserves bundle permissions/symlinks; uploading .app directories
+      # directly would discard Unix executable permissions in Actions artifacts.
+      - name: Upload macOS build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: FastDict-macOS-universal-${{ github.run_number }}
+          path: |
+            release/macos/*.app.zip
+            release/macos/*.dmg
+            release/macos/manifest-*.json
+            release/macos/README-macOS.txt
+            release/macos/THIRD_PARTY_NOTICES.md
+          if-no-files-found: error
+          retention-days: 14

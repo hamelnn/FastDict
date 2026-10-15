@@ -1,0 +1,60 @@
+name: Verify FastDict
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fastdict-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend tests and production build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+
+  desktop:
+    name: Native build (${{ matrix.os }})
+    needs: frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+      - run: npm ci
+      - name: Check Rust and platform dependencies
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+      - name: Verify native screenshot encoding
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+      # Tauri runs the frontend build once through beforeBuildCommand.
+      # Compile without publishing releases, packaging, or requiring signing keys.
+      # See https://v2.tauri.app/distribute/pipelines/github/ and tauri-action README.
+      - name: Build native app
+        uses: tauri-apps/tauri-action@v1
+        with:
+          tauriScript: npm run tauri
+          args: --no-bundle

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>轻译在你主动截图翻译时读取当前屏幕，并仅对选定区域进行本地文字识别。识别后的文字会发往你配置的翻译 API。</string>
+</dict>
+</plist>

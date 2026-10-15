@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="theme-color" content="#f8faf8"/>
+  <meta name="description" content="轻译 FastDict — 随手捕获，即刻理解。截图 OCR 与流式 AI 翻译。"/>
+  <title>轻译 · FastDict</title>
+  <style>
+    .boot-surface{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:#f8faf8;font-family:'Microsoft YaHei',system-ui,sans-serif;color:#273c35;padding:28px;box-sizing:border-box}
+    .boot-surface[hidden]{display:none}.boot-card{max-width:470px;width:100%;background:#fff;border:1px solid #e0e9df;border-radius:15px;padding:30px;box-shadow:0 10px 35px #273c3508}.boot-brand{font-size:13px;letter-spacing:2px;color:#799271;margin:0 0 20px}.boot-card h1,.boot-card h2{font-size:22px;margin:0 0 13px;font-weight:600}.boot-card p{font-size:13px;line-height:1.8;margin:0;color:#7c8e74}.boot-actions{display:flex;gap:10px;margin-top:24px}.boot-actions button{border:1px solid #d9e4d5;background:#fff;color:#526e47;font:inherit;font-size:13px;border-radius:7px;padding:10px 17px;cursor:pointer}.boot-actions button:first-child{background:#29694f;color:#fff;border-color:#29694f}.boot-stage{font-size:11px!important;opacity:.7;margin-top:17px!important;overflow-wrap:anywhere}
+  </style>
+</head>
+<body>
+  <section id="fastdict-boot" class="boot-surface" aria-label="正在启动轻译">
+    <div class="boot-card"><div class="boot-brand">FASTDICT · 轻译</div><h1>正在启动轻译</h1><p>正在加载本地界面。你的配置和翻译记录会保留。</p><div class="boot-actions"><button type="button" data-boot-quit>退出应用</button></div><p class="boot-stage" data-boot-shortcuts hidden>Ctrl + Alt + Q 可立即退出应用。</p><p id="fastdict-boot-status" class="boot-stage"></p></div>
+  </section>
+  <section id="fastdict-boot-error" class="boot-surface" role="alert" hidden>
+    <div class="boot-card"><div class="boot-brand">FASTDICT · 轻译</div><h2>应用界面未能启动</h2><p>可重新加载界面，或退出后重新打开。现有配置、历史和密钥没有被清除。</p><div class="boot-actions"><button type="button" id="fastdict-boot-retry">重新加载</button><button type="button" data-boot-quit>退出应用</button></div><p class="boot-stage" data-boot-shortcuts hidden>Ctrl + Alt + Q 可立即退出应用。</p><p id="fastdict-boot-stage" class="boot-stage"></p></div>
+  </section>
+  <div id="root"></div>
+  <script>
+    (function () {
+      // This recovery shell is independent of React and its imported chunks.
+      var allowed = ['bootstrap-start','bootstrap-import-failed','react-render-failed','storage-read-failed','storage-write-failed','unhandled-error','unhandled-rejection','bootstrap-timeout'];
+      var capture = new URLSearchParams(window.location.search).has('capture');
+      // This small fallback must identify Mac before any application module can load.
+      var native = !!window.__TAURI_INTERNALS__;
+      var mac = /Mac/.test(navigator.platform) && !/iPhone|iPad|iPod/.test(navigator.userAgent) && !(navigator.maxTouchPoints > 1);
+      document.querySelectorAll('[data-boot-shortcuts]').forEach(function (element) {
+        element.hidden = !native;
+        if (mac) element.textContent = '⌘Q 退出应用；⌥⌘Q 可立即退出。';
+      });
+      var failed = false, mounted = false, timer;
+      function report(stage) {
+        if (capture || allowed.indexOf(stage) < 0) return;
+        var bridge = window.__TAURI_INTERNALS__;
+        if (!bridge || typeof bridge.invoke !== 'function') return;
+        try {
+          Promise.resolve(bridge.invoke('report_boot_error', {stage:stage})).catch(function () {
+            document.getElementById('fastdict-boot-status').textContent = '无法写入启动诊断，请使用窗口关闭按钮退出。';
+          });
+        } catch (_) {
+          document.getElementById('fastdict-boot-status').textContent = '无法写入启动诊断，请使用窗口关闭按钮退出。';
+        }
+      }
+      function fail(stage) {
+        if (allowed.indexOf(stage) < 0) stage = 'unhandled-error';
+        if (failed) return;
+        failed = true; window.clearTimeout(timer); report(stage);
+        document.getElementById('fastdict-boot').hidden = true;
+        document.getElementById('root').hidden = true;
+        document.getElementById('fastdict-boot-error').hidden = false;
+        // Only a fixed stage identifier is shown or logged, never error text/data.
+        document.getElementById('fastdict-boot-stage').textContent = '诊断阶段：' + stage;
+      }
+      window.__FASTD_BOOT__ = {
+        fail:fail, report:report,
+        done:function () { mounted = true; window.clearTimeout(timer); if (!failed) document.getElementById('fastdict-boot').hidden = true; }
+      };
+      function quit() {
+        var bridge = window.__TAURI_INTERNALS__;
+        if (!bridge || typeof bridge.invoke !== 'function') {
+          document.getElementById('fastdict-boot-stage').textContent = '请关闭此浏览器页面。';
+          document.getElementById('fastdict-boot-status').textContent = '请关闭此浏览器页面。';
+          return;
+        }
+        try {
+          Promise.resolve(bridge.invoke('quit_app')).catch(function () {
+            document.getElementById('fastdict-boot-stage').textContent = '退出请求未完成，请使用窗口关闭按钮。';
+          });
+        } catch (_) {
+          document.getElementById('fastdict-boot-stage').textContent = '退出请求未完成，请使用窗口关闭按钮。';
+        }
+      }
+      document.querySelectorAll('[data-boot-quit]').forEach(function (button) { button.addEventListener('click', quit); });
+      document.getElementById('fastdict-boot-retry').addEventListener('click', function () { window.location.reload(); });
+      window.addEventListener('error', function (event) {
+        var target = event.target;
+        // Image/OCR asset failures have normal application-level error handling.
+        // Only script loads or uncaught main-thread errors need the recovery shell.
+        if (target === window || target && target.tagName === 'SCRIPT') fail('unhandled-error');
+      }, true);
+      window.addEventListener('unhandledrejection', function (event) { event.preventDefault(); fail('unhandled-rejection'); });
+      if (!capture) {
+        report('bootstrap-start');
+        timer = window.setTimeout(function () { if (!mounted) fail('bootstrap-timeout'); }, 15000);
+      }
+    })();
+  </script>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>
