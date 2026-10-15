@@ -6,8 +6,9 @@
 
 - `npm run check`：38 项核心测试、19 项构建脚本测试、TypeScript 与生产构建通过。
 - `npm run test:e2e`：39 项完整交互测试通过，新增两端选图、取消选图、真实 OCR、粘贴、流式结果、分享、后台停止与恢复界面检查。
-- Windows GNU `cargo check --release` 通过；0.2.0 的 [桌面 CI](https://github.com/hamelnn/FastDict/actions/runs/38689725918) 已完成 Windows / macOS 原生检查、测试与编译。
-- [Android ARM64 构建](https://github.com/hamelnn/FastDict/actions/runs/38689556715) 已通过，生成 `FastDict-Android-0.2.0-arm64-v8a-debug.apk`，包名、版本、架构、debug 标识及 APK v2 签名验证通过。尚未设备安装验收。
+- Windows GNU `cargo check --release` 通过；0.2.0 的 [完整 CI](https://github.com/hamelnn/FastDict/actions/runs/38691193513) 已成功完成前端检查，以及 Windows / macOS 原生检查、测试与编译。
+- [Android ARM64 优化构建](https://github.com/hamelnn/FastDict/actions/runs/38691196346) 已通过，生成 `FastDict-Android-0.2.0-arm64-v8a-debug.apk`，包名、版本、架构、debug 标识及 APK v2 签名验证通过。APK 为 29,371,560 字节，SHA-256 为 `fc7b863d178401935f96d03767747409a612bab08acbe93e4a81e4c774b8f143`。尚未设备安装验收。
+- 安卓包从 194,063,104 字节缩小约 85%。已直接检查最终 ELF：原生库为 22,055,936 字节，`.debug_*` 与 `.symtab` 已移除，动态符号表仍存在。构建清单记录 `optimized-dev` 及优化选项。
 - [iOS 模拟器构建与启动](https://github.com/hamelnn/FastDict/actions/runs/38689728876) 已通过：Swift / Rust 编译、平台与架构检查、应用包导出，以及 iPhone 17 Pro / iOS 26.5 模拟器安装启动。已人工检查 1206 × 2622 原始截图，主界面和底部导航正常显示；顶部有系统首次启动通知。该包不能安装到 iPhone。
 - Android 手机预览使用模拟原生接口，已检查布局；iOS / Android 均没有真机测试结论。
 - 0.1.2 的 [GitHub CI](https://github.com/hamelnn/FastDict/actions/runs/38687373078) 已完成 macOS 原生检查、测试与编译；不包含通用安装包打包或设备操作。
