@@ -1,0 +1,55 @@
+name: Build Windows installer and portable app
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fastdict-windows-packaging-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-x64:
+    name: Windows x64 NSIS and portable ZIP
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+      - run: npm ci
+      - run: npm run check
+      - name: Build unsigned installer and portable package
+        run: npm run windows:installer -- --target=x86_64-pc-windows-msvc
+      - name: Verify executable version and package hashes
+        shell: pwsh
+        run: |
+          $manifest = Get-Content release/manifest.json -Raw | ConvertFrom-Json
+          $actualVersion = (Get-Item release/FastDict.exe).VersionInfo.ProductVersion
+          if ($actualVersion -ne $manifest.version) { throw 'Executable version does not match the release manifest.' }
+          foreach ($artifact in $manifest.artifacts) {
+            $path = Join-Path release $artifact.name
+            if ((Get-Item $path).Length -ne $artifact.bytes) { throw 'Artifact size mismatch.' }
+            if ((Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $artifact.sha256) { throw 'Artifact hash mismatch.' }
+          }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: FastDict-Windows-x64-${{ github.run_number }}
+          path: |
+            release/*-setup.exe
+            release/FastDict-Windows-x64-*.zip
+            release/manifest.json
+            release/README-Windows.txt
+            release/THIRD_PARTY_NOTICES.md
+          if-no-files-found: error
+          retention-days: 14

@@ -6,6 +6,8 @@ import { createHash } from 'node:crypto';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const releaseVersion = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version;
+const appConfig = JSON.parse(await readFile(join(root, 'src-tauri/tauri.conf.json'), 'utf8'));
+if (releaseVersion !== appConfig.version) throw new Error('Frontend and native application versions do not match.');
 const tools = join(root, '.build-tools');
 const exists = async path => { try { await stat(path); return true; } catch { return false; } };
 if (process.platform !== 'win32') throw new Error('Build this Windows app on Windows, or use the documented CI build.');
@@ -74,10 +76,19 @@ for (const name of ['FastDict.exe','FastDict-Windows-x64.zip',versionedArchive])
   const bytes = await readFile(join(output,name)); manifest.artifacts.push({name,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')});
 }
 if (process.argv.includes('--installer')) {
-  run(process.execPath,[cli,'bundle','--target',target,'--bundles','nsis','--ci']);
+  const resources = Object.fromEntries(files.filter(name => name !== 'FastDict.exe' && name !== 'WebView2Loader.dll').map(name => [join(output, name), name]));
+  // Tauri includes GNU's WebView2Loader from the target directory itself.
+  // Other imported runtime DLLs and notices must also ship in the installer.
+  const installerConfig = { bundle: {
+    useLocalToolsDir: true,
+    resources,
+    windows: { nsis: { installMode: 'currentUser', languages: ['SimpChinese', 'English'] } },
+  } };
+  run(process.execPath,[cli,'bundle','--target',target,'--bundles','nsis','--ci','--config',JSON.stringify(installerConfig)]);
   const folder=join(root,'src-tauri/target',target,'release/bundle/nsis');
-  const setup=(await readdir(folder)).find(name=>name.endsWith('-setup.exe'));
-  if(!setup) throw new Error('Windows installer was not produced.');
+  const setups=(await readdir(folder)).filter(name=>name.startsWith(`${appConfig.productName}_${releaseVersion}_`) && name.endsWith('-setup.exe'));
+  if(setups.length !== 1) throw new Error('A unique Windows installer for this version was not produced.');
+  const setup=setups[0];
   await copyFile(join(folder,setup),join(output,setup));
   const bytes=await readFile(join(output,setup));manifest.artifacts.push({name:setup,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')});
 }
