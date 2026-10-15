@@ -4,7 +4,7 @@
 
 React + TypeScript 界面，Tauri 2 原生外壳，复用系统 WebView。
 
-当前已发布的 Windows 版本为 [FastLingo 0.3.1](https://github.com/hamelnn/FastDict/releases/tag/v0.3.1)。本仓库 **0.4.0 源码正在验证，尚未发布**，已改用官方 [Sign in with ChatGPT](docs/chatgpt.md)，不再依赖本机 Codex。0.3.1 安装包仍使用旧的 Codex 接入方式。macOS、Android 和 iOS 模拟器现有二进制仍为 [FastDict 0.2.0](https://github.com/hamelnn/FastDict/releases/tag/v0.2.0)；iPhone 真机安装需要另行配置 Apple 签名。
+Windows **0.4.0 预发布版**：[下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.4.0) · [安装包](https://github.com/hamelnn/FastDict/releases/download/v0.4.0/FastLingo_0.4.0_x64-setup.exe) · [便携 ZIP](https://github.com/hamelnn/FastDict/releases/download/v0.4.0/FastLingo-Windows-x64-0.4.0.zip)。该版本改用官方 [Sign in with ChatGPT](docs/chatgpt.md)，不再依赖本机 Codex。[0.3.1](https://github.com/hamelnn/FastDict/releases/tag/v0.3.1) 使用旧的 Codex 接入方式。macOS、Android 和 iOS 模拟器现有二进制仍为 [FastDict 0.2.0](https://github.com/hamelnn/FastDict/releases/tag/v0.2.0)；iPhone 真机安装需要另行配置 Apple 签名。
 
 0.3.0 将应用更名为 **FastLingo**，首次启动不预置翻译服务，由用户自行添加。桌面偏好可选择关闭后直接退出或留在托盘，并支持开机启动；默认直接退出、开机不自启。更名沿用原有应用标识、数据目录和存储键，兼容已有服务、历史和密钥。
 
@@ -17,7 +17,7 @@ React + TypeScript 界面，Tauri 2 原生外壳，复用系统 WebView。
 - **自行配置 API**：首次启动从空服务列表开始，点击“添加翻译服务”配置。
 - **桌面行为**：关闭后退出或留在托盘可选，开机启动默认关闭。
 - **多 API 配置**：支持 OpenAI 兼容、Anthropic 和 Gemini 协议，侧栏切换服务。
-- **桌面订阅翻译（0.4.0 源码）**：通过官方 ChatGPT 登录授权，选择已有账号或添加账号，支持流式译文、取消、断开连接和管理用量。
+- **桌面订阅翻译**：通过官方 ChatGPT 登录授权，选择已有账号或添加账号，支持流式译文、取消、断开连接和管理用量。
 - **本地 OCR**：内置英文、简体中文、繁体中文、日文、韩文模型，复用识别 Worker。
 - **流式结果**：边生成边显示，支持取消、复制与本地历史。
 - **手机界面**：底部翻译 / 记录 / 设置导航，系统选图、主动粘贴与译文分享。
@@ -26,18 +26,18 @@ React + TypeScript 界面，Tauri 2 原生外壳，复用系统 WebView。
 
 | 平台 | 当前状态 | 使用与构建 |
 | --- | --- | --- |
-| Windows x64 | 已发布 0.3.1 便携包订阅翻译、取消与关闭退出实测通过；0.4.0 官方登录正在验证 | [Windows 说明](docs/windows.md) |
+| Windows x64 | 0.4.0 预发布：官方授权、最终便携包真实 Luna 翻译、请求中取消与取消后恢复均实测通过；安装器待验收 | [Windows 说明](docs/windows.md) |
 | macOS | 已发布 0.2.0 通用 DMG 和应用 ZIP 已校验；0.4.0 源码含官方登录，真机流程待验收 | [macOS 说明](docs/macos.md) |
 | iOS | 0.2.0 模拟器编译、安装启动与画面检查通过；真机签名及功能待验收 | [移动端说明](docs/mobile.md) |
 | Android ARM64 | 0.2.0 debug APK 已生成并校验，设备功能待验收 | [移动端说明](docs/mobile.md) |
 
 仓库提供源码；`release/` 为本地构建输出，不随源码提交。完整截图到真实 API 的桌面流程仍需设备验收，详见 [验证范围](docs/validation.md)。
 
-0.4.0 当前已通过 166 项自动化测试：54 项核心、19 项构建脚本、60 项前端交互和 33 项原生测试。Windows 安装包和便携包已生成，真实 OAuth 授权及订阅翻译仍待验收。0.3.1 的真实 Codex 翻译是历史记录，不能替代新接入的验证。各版本结果见 [验证范围](docs/validation.md)。
+0.4.0 已通过 **178 项自动化测试**：54 项核心、19 项构建脚本、60 项前端交互和 45 项原生测试，TypeScript、Vite 与 Windows 原生正式构建通过。用户已完成官方浏览器授权；从最终 ZIP 解压的应用已实际完成 GPT-6 Luna 翻译、请求进行中按 Esc 取消，以及取消后再次翻译，未写入被取消请求的历史。截图全流程、安装与其他平台的验收边界见 [验证范围](docs/validation.md)。
 
 ## 桌面用法
 
-1. 打开应用，添加 API 地址、模型和密钥；使用 0.4.0 源码构建时，也可选择“ChatGPT 订阅”，点击“Continue with ChatGPT”在浏览器登录授权。
+1. 打开应用，添加 API 地址、模型和密钥；也可选择“ChatGPT 订阅”，点击“Continue with ChatGPT”在浏览器登录授权。
 2. 选择 OCR 语言与翻译目标语言。
 3. 按截图快捷键并拖动选区，松开后在侧栏查看译文。
 

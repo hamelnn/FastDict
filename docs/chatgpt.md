@@ -1,6 +1,6 @@
 # ChatGPT 订阅翻译
 
-FastLingo 0.4.0 源码使用官方 Sign in with ChatGPT，让符合条件的账号授权 FastLingo 使用 ChatGPT 套餐或积分进行翻译。此版本尚未发布，真实浏览器授权与最终安装包验收仍待完成；已发布的 0.3.1 使用方式见 [历史说明](codex.md)。
+FastLingo 0.4.0 使用官方 Sign in with ChatGPT，让符合条件的账号授权 FastLingo 使用 ChatGPT 套餐或积分进行翻译。Windows [0.4.0 预发布下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.4.0) 提供安装包与便携包。真实浏览器授权、最终便携包 GPT-6 Luna 翻译、请求中取消与取消后恢复均已实测；旧版 0.3.1 使用方式见 [历史说明](codex.md)。
 
 此入口支持 Windows 和 macOS 桌面版。无需安装 Codex，也无需提供 API Key。官方目前说明符合条件的 Plus / Pro 账号可使用此能力；具体模型、套餐、工作区和地区权限，以授权及实际请求结果为准。[官方接入概览](https://developers.openai.com/siwc/token-sharing-open-source)、[官方快速入门](https://developers.openai.com/siwc/quickstart)。
 
@@ -25,6 +25,8 @@ FastLingo 0.4.0 源码使用官方 Sign in with ChatGPT，让符合条件的账�
 
 翻译界面会显示“使用 ChatGPT 套餐”，旁边的“管理用量”打开 [ChatGPT 用量设置](https://chatgpt.com/settings/usage)。额度限制可能来自套餐或本应用的限制；达到限制后应先管理用量，应用不会自动改用付费 API Key。[官方用量界面要求](https://developers.openai.com/siwc/ui-ux-guidelines)。
 
+实测中曾收到 `subscription_sharing_usage_limit_exceeded`。这个错误不能用来判断整个 ChatGPT 套餐额度已耗尽，也不能据此推算恢复时间；应查看套餐和该应用的用量设置。应用会保留连接并提示管理用量，避免反复登录。[官方错误处理](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery)。
+
 “断开连接”会停止该连接的翻译，尝试撤销可续期会话，然后清除本机令牌，并保留注册信息供以后重新登录。如果网络原因导致无法确认远程撤销，应用会明确提示；可到 ChatGPT 设置中断开 FastLingo。临时网络错误不会直接删除连接。[账号、刷新和退出](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions)、[错误处理](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery)。
 
 ## 数据处理
@@ -37,4 +39,4 @@ iOS、Android 和浏览器预览继续使用自行配置的 API 服务，当前�
 
 ## 验收状态
 
-0.4.0 的实现与自动化检查进度见 [验证范围](validation.md)。真实 ChatGPT 授权需要用户在系统浏览器完成；在完成最终包的授权、翻译、取消及断开连接验收前，不把源码检查写作已发布或已验证的设备功能。
+已通过 178 项自动化测试，真实 ChatGPT 授权由用户在系统浏览器完成。最终便携 ZIP 中的应用完成 `Hello, world.` 翻译，在较长请求进行中按 Esc 后恢复等待且没有新增历史，随后再次翻译成功。真实账号切换、远程撤销与安装器执行尚未验收；macOS 真机和移动端也未在本轮重测。最终哈希、单次耗时和详细边界见 [验证范围](validation.md)。

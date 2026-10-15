@@ -1,12 +1,12 @@
 # FastLingo · Windows 桌面版
 
-## 0.4.0 源码：官方 ChatGPT 登录
+## 0.4.0 预发布：官方 ChatGPT 登录
 
-当前 0.4.0 源码已改用官方 [Sign in with ChatGPT](chatgpt.md)，尚未发布。添加“ChatGPT 订阅”服务后，点击 **Continue with ChatGPT**，在系统浏览器为 FastLingo 登录授权，再从账号模型目录选择模型并保存。默认 `gpt-6-luna`，以当前账号实际可用目录为准。
+0.4.0 预发布版改用官方 [Sign in with ChatGPT](chatgpt.md)。添加“ChatGPT 订阅”服务后，点击 **Continue with ChatGPT**，在系统浏览器为 FastLingo 登录授权，再从账号模型目录选择模型并保存。默认 `gpt-6-luna`，以当前账号实际可用目录为准。
 
 不再要求安装 Codex，也不读取 Codex 登录凭据。旧版 Codex 服务配置保留，但须为 FastLingo 重新授权。翻译通过公开 Responses API 流式显示；支持取消、选择已保存账号、断开连接和管理用量。API 服务继续使用自己的地址、模型和密钥。
 
-当前已通过 166 项自动化测试：54 项核心、19 项构建脚本、60 项前端交互和 33 项原生测试。Windows 安装包与便携包已生成；真实 OAuth 授权及订阅翻译仍待验收。旧版实测结果不会作为本次登录流程的验证结论。详见 [验证范围](validation.md)。
+已通过 178 项自动化测试：54 项核心、19 项构建脚本、60 项前端交互和 45 项原生测试；TypeScript、Vite 与 Windows 原生正式构建通过。用户已完成真实官方授权，账号目录提供 GPT-6 Luna。从最终便携 ZIP 解压的应用已完成真实翻译，在 20,440 字符的合成原文请求进行中按 Esc 取消，随后再次翻译成功；取消没有新增历史或迟到结果。安装 / 覆盖升级、真实账号切换与远程撤销仍未验收。最终文件哈希和完整边界见 [验证范围](validation.md)。
 
 ## 已发布的 0.3.1
 
@@ -34,9 +34,9 @@
 
 ## 使用
 
-从 [0.3.1 GitHub Release](https://github.com/hamelnn/FastDict/releases/tag/v0.3.1) 下载 `FastLingo_0.3.1_x64-setup.exe` 或 `FastLingo-Windows-x64-0.3.1.zip`。便携版需解压后运行，并保持 `FastLingo.exe` 与附带 DLL 在同一文件夹。若系统缺少 WebView2 Runtime，请从 [Microsoft 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。
+从 [0.4.0 预发布下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.4.0) 下载 [FastLingo_0.4.0_x64-setup.exe](https://github.com/hamelnn/FastDict/releases/download/v0.4.0/FastLingo_0.4.0_x64-setup.exe) 或 [FastLingo-Windows-x64-0.4.0.zip](https://github.com/hamelnn/FastDict/releases/download/v0.4.0/FastLingo-Windows-x64-0.4.0.zip)。便携版需解压后运行，并保持 `FastLingo.exe` 与附带 DLL 在同一文件夹。若系统缺少 WebView2 Runtime，请从 [Microsoft 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。
 
-首次打开没有预设服务。在偏好设置添加 API 地址、模型和密钥，再选择 OCR 与目标语言。下载的 0.3.1 订阅入口仍需本机 Codex；从 0.4.0 源码构建的订阅入口须在浏览器为 FastLingo 单独授权，配置见 [ChatGPT 登录说明](chatgpt.md)。
+首次打开没有预设服务。在偏好设置添加 API 地址、模型和密钥，或选择“ChatGPT 订阅”并在浏览器为 FastLingo 单独授权，再选择 OCR 与目标语言。配置见 [ChatGPT 登录说明](chatgpt.md)。
 
 | 操作 | 入口 |
 | --- | --- |
