@@ -2,6 +2,14 @@
 
 以下为 2026-10-15 已完成的验证基线。Windows 原生操作记录来自 0.1.1；后续源码重构不能等同于新版本设备实测。最新自动化结果应以实际运行输出为准。
 
+## 0.2.0 移动端验证
+
+- `npm run check`：38 项核心测试、17 项构建脚本测试、TypeScript 与生产构建通过。
+- `npm run test:e2e`：39 项完整交互测试通过，新增两端选图、取消选图、真实 OCR、粘贴、流式结果、分享、后台停止与恢复界面检查。
+- Windows GNU `cargo check --release` 通过。Android 和 iOS 原生构建工作流已准备，执行结果待补充。
+- iOS / Android 预览使用模拟原生接口，已检查手机布局；没有真机测试结论。
+- 0.1.2 的 [GitHub CI](https://github.com/hamelnn/FastDict/actions/runs/38687373078) 已完成 macOS 原生检查、测试与编译；不包含通用安装包打包或设备操作。
+
 ## 0.1.2 优化验证
 
 - `npm run check`：38 项核心测试、9 项构建脚本测试、TypeScript 与生产构建通过。
@@ -36,8 +44,8 @@ Windows 曾收到白屏且无法退出的反馈，重启后未复现当时故障
 ## 待验收
 
 - **Windows**：真实快捷键 → 框选 → OCR → API → 侧栏的完整翻译流程，以及多显示器和不同缩放比例。
-- **macOS**：Apple SDK 编译、`.app` / `.dmg`、首次授权、多屏、Retina、Spaces、Dock、Keychain 及真实翻译。
+- **macOS**：通用 `.app` / `.dmg`、首次授权、多屏、Retina、Spaces、Dock、Keychain 及真实翻译。
 - **Android / iOS**：原生构建、模拟器与设备上的图片导入、剪贴板、OCR 和生命周期。
 - **所有平台**：真实服务商联调、冷启动与热态性能基准、正式签名和发行流程。
 
-Windows 本地构建产物不随源码提交；macOS 和移动端尚无已验证安装包。GitHub Actions 配置已经准备，远程执行结果需另行确认。
+构建产物不随源码提交；原生 CI 编译、安装包校验与设备功能验收分别记录。

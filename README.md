@@ -11,14 +11,15 @@ React + TypeScript 界面，Tauri 2 原生外壳，复用系统 WebView。
 - **多 API 配置**：支持 OpenAI 兼容、Anthropic 和 Gemini 协议，侧栏切换服务。
 - **本地 OCR**：内置英文、简体中文、繁体中文、日文、韩文模型，复用识别 Worker。
 - **流式结果**：边生成边显示，支持取消、复制与本地历史。
+- **手机界面**：底部翻译 / 记录 / 设置导航，系统选图、主动粘贴与译文分享。
 
 ## 平台状态
 
 | 平台 | 当前状态 | 使用与构建 |
 | --- | --- | --- |
 | Windows x64 | 已有本地构建、启动、截图显示/取消及退出验证基线 | [Windows 说明](docs/windows.md) |
-| macOS | 已实现菜单栏、权限引导及通用包构建流程，尚未原生构建或真机验证 | [macOS 说明](docs/macos.md) |
-| Android / iOS | 共享界面与移动入口代码已准备，尚未构建或设备验证 | [平台说明](docs/platforms.md) |
+| macOS | 原生检查、测试与编译已通过 CI，通用安装包和真机流程待验收 | [macOS 说明](docs/macos.md) |
+| Android / iOS | 已实现手机界面、原生选图与分享；原生构建状态见验证记录 | [移动端说明](docs/mobile.md) |
 
 仓库提供源码；`release/` 为本地构建输出，不随源码提交。完整截图到真实 API 的桌面流程仍需设备验收，详见 [验证范围](docs/validation.md)。
 
@@ -37,6 +38,14 @@ React + TypeScript 界面，Tauri 2 原生外壳，复用系统 WebView。
 
 macOS 首次截图需要屏幕录制权限。Windows 的关闭按钮退出应用；macOS 的关闭按钮隐藏到菜单栏。
 
+## 手机用法
+
+1. 在设置中添加 API 服务，选择目标语言。
+2. 使用手机系统截图，然后打开 FastDict，点击「选取截图」。选定图片后自动识别并翻译。
+3. 也可点击「粘贴文本」跳过 OCR；译文可复制或通过系统菜单分享。
+
+移动端使用手机自身截图操作，没有跨应用全局截图快捷键。最低 Android 7 / iOS 15；构建与安装见 [移动端说明](docs/mobile.md)。
+
 ## 本地开发
 
 需要 Node.js 22.12+。原生开发另需 Rust 1.90+ 和对应平台工具链。
@@ -52,6 +61,6 @@ npm run dev
 
 截图在本机识别，**识别后的文字会发送到所选 API 服务**。配置和翻译历史保存在设备本地，历史可在应用内清空。
 
-API Key 不写入配置或历史：Windows 使用系统凭据库，macOS/iOS 使用 Keychain；Android 和浏览器预览仅保存在会话内存，重启或刷新后需重新输入。浏览器请求受服务商 CORS 设置限制，原生版使用原生网络请求。
+API Key 不写入配置或历史：Windows 使用系统凭据库，macOS/iOS 使用 Keychain，Android 使用 Keystore 加密保存；浏览器预览仅保存在会话内存，刷新后需重新输入。浏览器请求受服务商 CORS 设置限制，原生版使用原生网络请求。
 
 [架构与性能](docs/architecture.md) · [验证范围](docs/validation.md) · [第三方声明](THIRD_PARTY_NOTICES.md)

@@ -1,6 +1,6 @@
 [package]
 name = "fastdict"
-version = "0.1.2"
+version = "0.2.0"
 description = "A lightweight screenshot and clipboard translator"
 authors = ["FastDict"]
 edition = "2021"
@@ -17,6 +17,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-http = "2"
+tauri-plugin-fastdict-mobile = { path = "plugins/fastdict-mobile" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

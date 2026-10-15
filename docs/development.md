@@ -30,7 +30,7 @@ cargo check --manifest-path src-tauri/Cargo.toml
 cargo test --manifest-path src-tauri/Cargo.toml --lib
 ```
 
-桌面打包分别使用 `npm run windows:build` 和 `npm run macos:build`；构建前置要求、输出与签名说明见 [Windows](windows.md) / [macOS](macos.md)。移动端入口见 [平台说明](platforms.md)。
+桌面打包分别使用 `npm run windows:build` 和 `npm run macos:build`；构建前置要求、输出与签名说明见 [Windows](windows.md) / [macOS](macos.md)。移动端使用 `android:init` / `android:build` 和 `ios:init` / `ios:build`，详见 [移动端说明](mobile.md)。
 
 ## 项目结构
 
@@ -40,9 +40,10 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib
 | `src/lib/` | 翻译协议、OCR、存储及平台接口 |
 | `src/components/` | 截图框选与独立界面组件 |
 | `src-tauri/src/` | 原生截图、快捷键、窗口、诊断与密钥存储 |
+| `src-tauri/plugins/fastdict-mobile/` | Kotlin / Swift 原生选图、分享及 Android 加密密钥存储 |
 | `scripts/` | OCR 资源准备与平台构建 |
 | `tests/` | 浏览器、启动恢复和原生接口模拟测试 |
-| `.github/workflows/` | 自动检查与手动 macOS 打包 |
+| `.github/workflows/` | 自动检查与手动 macOS、Android、iOS 模拟器打包 |
 
 提交源码、锁文件与相关测试；依赖、OCR 下载缓存、工具链、构建产物和本机诊断均由 `.gitignore` 排除。应用使用者的 API Key 通过应用配置，不应放入源码或测试夹具。
 

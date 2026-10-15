@@ -1,8 +1,11 @@
 //! API keys are deliberately kept outside provider metadata and frontend storage.
-//! Windows and Apple targets use the OS credential vault. Android and other
-//! targets keep keys in process memory until a native persistent vault is added.
+//! Windows and Apple targets use the OS credential vault. Android encrypts keys
+//! with Android Keystore; unsupported desktop targets use session memory.
 
+#[cfg(not(target_os = "android"))]
 use std::sync::Mutex;
+#[cfg(target_os = "android")]
+use tauri::Manager;
 
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "ios"))]
 const SERVICE: &str = "app.fastdict.api-keys";
@@ -10,7 +13,7 @@ const SERVICE: &str = "app.fastdict.api-keys";
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "ios"))]
 static VAULT_LOCK: Mutex<()> = Mutex::new(());
 
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios")))]
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios", target_os = "android")))]
 static SESSION_KEYS: std::sync::OnceLock<Mutex<std::collections::HashMap<String, String>>> =
     std::sync::OnceLock::new();
 
@@ -48,10 +51,14 @@ where
 }
 
 #[tauri::command]
-pub async fn save_api_key(provider_id: String, api_key: String) -> Result<(), String> {
+pub async fn save_api_key(app: tauri::AppHandle, provider_id: String, api_key: String) -> Result<(), String> {
     validate_provider_id(&provider_id)?;
     validate_api_key(&api_key)?;
+    #[cfg(not(target_os = "android"))]
+    let _ = app;
     vault_task(move || {
+        #[cfg(target_os = "android")]
+        { app.state::<tauri_plugin_fastdict_mobile::Mobile<tauri::Wry>>().save_key(provider_id, api_key) }
         #[cfg(any(target_os = "windows", target_os = "macos", target_os = "ios"))]
         {
             // Serialize operations: some platform vaults cannot safely update
@@ -65,7 +72,7 @@ pub async fn save_api_key(provider_id: String, api_key: String) -> Result<(), St
                 .set_password(&api_key)
                 .map_err(|_| "无法保存 API Key，请检查系统密钥保险库权限".to_string())
         }
-        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios")))]
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios", target_os = "android")))]
         {
             let mut keys = SESSION_KEYS
                 .get_or_init(|| Mutex::new(std::collections::HashMap::new()))
@@ -79,9 +86,13 @@ pub async fn save_api_key(provider_id: String, api_key: String) -> Result<(), St
 }
 
 #[tauri::command]
-pub async fn get_api_key(provider_id: String) -> Result<Option<String>, String> {
+pub async fn get_api_key(app: tauri::AppHandle, provider_id: String) -> Result<Option<String>, String> {
     validate_provider_id(&provider_id)?;
+    #[cfg(not(target_os = "android"))]
+    let _ = app;
     vault_task(move || {
+        #[cfg(target_os = "android")]
+        { app.state::<tauri_plugin_fastdict_mobile::Mobile<tauri::Wry>>().get_key(provider_id) }
         #[cfg(any(target_os = "windows", target_os = "macos", target_os = "ios"))]
         {
             let _guard = VAULT_LOCK
@@ -96,7 +107,7 @@ pub async fn get_api_key(provider_id: String) -> Result<Option<String>, String> 
                 Err(_) => Err("无法读取 API Key，请检查系统密钥保险库权限".into()),
             }
         }
-        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios")))]
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios", target_os = "android")))]
         {
             let keys = SESSION_KEYS
                 .get_or_init(|| Mutex::new(std::collections::HashMap::new()))
@@ -109,9 +120,13 @@ pub async fn get_api_key(provider_id: String) -> Result<Option<String>, String> 
 }
 
 #[tauri::command]
-pub async fn delete_api_key(provider_id: String) -> Result<(), String> {
+pub async fn delete_api_key(app: tauri::AppHandle, provider_id: String) -> Result<(), String> {
     validate_provider_id(&provider_id)?;
+    #[cfg(not(target_os = "android"))]
+    let _ = app;
     vault_task(move || {
+        #[cfg(target_os = "android")]
+        { app.state::<tauri_plugin_fastdict_mobile::Mobile<tauri::Wry>>().delete_key(provider_id) }
         #[cfg(any(target_os = "windows", target_os = "macos", target_os = "ios"))]
         {
             let _guard = VAULT_LOCK
@@ -124,7 +139,7 @@ pub async fn delete_api_key(provider_id: String) -> Result<(), String> {
                 Err(_) => Err("无法删除 API Key，请检查系统密钥保险库权限".into()),
             }
         }
-        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios")))]
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios", target_os = "android")))]
         {
             let mut keys = SESSION_KEYS
                 .get_or_init(|| Mutex::new(std::collections::HashMap::new()))

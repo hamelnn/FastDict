@@ -1242,7 +1242,7 @@ dependencies = [
 
 [[package]]
 name = "fastdict"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "image",
@@ -1252,6 +1252,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
+ "tauri-plugin-fastdict-mobile",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-http",
  "tauri-plugin-single-instance",
@@ -4669,6 +4670,16 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "tauri-plugin-fastdict-mobile"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
 ]
 
 [[package]]

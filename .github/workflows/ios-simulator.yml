@@ -1,0 +1,53 @@
+name: Build iOS simulator app
+
+# No Apple signing credentials, device IPA, App Store upload or release creation.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fastdict-ios-simulator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios-simulator:
+    name: iOS simulator compile and package
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim,x86_64-apple-ios
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+      - name: Check the runner's Xcode and CocoaPods
+        run: |
+          xcodebuild -version
+          pod --version
+      - run: npm ci
+      - run: npm run check
+      - name: Initialize Xcode project
+        run: npm run ios:init
+      - name: Build unsigned simulator app
+        run: npm run ios:build
+      - name: Upload simulator app (cannot install on an iPhone)
+        uses: actions/upload-artifact@v7
+        with:
+          name: FastDict-iOS-simulator-${{ github.run_number }}
+          path: |
+            release/ios/*.app.zip
+            release/ios/manifest-*.json
+            release/ios/README-iOS.txt
+            release/ios/THIRD_PARTY_NOTICES.md
+          if-no-files-found: error
+          retention-days: 14

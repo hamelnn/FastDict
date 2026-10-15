@@ -1,6 +1,7 @@
 mod secrets;
 mod diagnostics;
 mod macos;
+mod mobile;
 #[cfg(desktop)]
 mod capture;
 #[cfg(desktop)]
@@ -507,6 +508,7 @@ pub fn run() {
     }));
     let builder = builder
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_fastdict_mobile::init())
         .plugin(tauri_plugin_http::init());
     #[cfg(desktop)]
     let builder = builder
@@ -524,6 +526,7 @@ pub fn run() {
             get_screen_permission, request_screen_permission, open_screen_permission_settings,
             configure_shortcuts, get_shortcut_status,
             secrets::save_api_key, secrets::get_api_key, secrets::delete_api_key,
+            mobile::mobile_pick_image, mobile::mobile_share_text,
         ])
         .setup(|app| {
             #[cfg(desktop)]

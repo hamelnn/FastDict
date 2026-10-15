@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowUpRight, Check, LoaderCircle, ShieldCheck, Trash2, X } from 'lucide-react';
 import type { Provider, ProviderKind } from '../types';
 import { PROVIDER_PRESETS } from '../lib/catalog';
-import { isNative, isNativeMac } from '../lib/platform';
+import { isMobile, isNative, isNativeMac, operatingSystem } from '../lib/platform';
 import { validateEndpoint } from '../lib/translation';
 
 export function ProviderPresets({
@@ -158,7 +158,9 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove }
         <label className="form-label">
           服务名称
           <input
-            autoFocus
+            autoFocus={!isMobile}
+            autoCapitalize="none"
+            autoCorrect="off"
             value={draft.name}
             onChange={(event) => setDraft({ ...draft, name: event.target.value })}
             maxLength={40}
@@ -180,6 +182,9 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove }
           API 地址
           <input
             type="url"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             value={draft.baseUrl}
             onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })}
             placeholder="https://api.example.com/v1"
@@ -190,6 +195,9 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove }
         <label className="form-label">
           模型名称
           <input
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             value={draft.model}
             onChange={(event) => setDraft({ ...draft, model: event.target.value })}
             placeholder="填写服务支持的模型名称"
@@ -204,6 +212,9 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove }
           <div className="key-input">
             <input
               autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               type={showKey ? 'text' : 'password'}
               value={key}
               onChange={(event) => {
@@ -230,7 +241,11 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove }
         <div className="form-security">
           <ShieldCheck size={15} />
           <span>
-            {isNativeMac
+            {isNative && operatingSystem === 'ios'
+              ? 'iOS 钥匙串存储'
+              : isNative && operatingSystem === 'android'
+                ? 'Android 系统密钥库加密存储'
+                : isNativeMac
               ? 'macOS 钥匙串存储'
               : isNative
                 ? '系统保险库存储 · Android 仅本次会话'

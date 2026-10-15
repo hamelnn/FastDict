@@ -19,6 +19,7 @@ import {
   Plus,
   ScanLine,
   Settings2,
+  Share2,
   ShieldCheck,
   Sparkles,
   X,
@@ -36,8 +37,11 @@ import {
   isNative,
   isNativeMac,
   listenInputs,
+  operatingSystem,
+  pickMobileImage,
   readClipboard,
   shortcutLabels,
+  shareText,
   startCapture,
   writeClipboard,
 } from './lib/platform';
@@ -61,6 +65,7 @@ import { LANGUAGES, OCR_LANGUAGES } from './lib/catalog';
 import { HistoryView } from './components/HistoryView';
 import { PreferencesView } from './components/PreferencesView';
 import { ProviderEditor, ProviderPresets } from './components/ProviderDialogs';
+import { MobileNavigation } from './components/MobileNavigation';
 
 type Phase = 'idle' | 'capturing' | 'ocr' | 'translating' | 'error';
 type View = 'translate' | 'history' | 'settings';
@@ -91,6 +96,7 @@ export default function App() {
   const [showPresets, setShowPresets] = useState(false);
   const [windowMode, setWindowMode] = useState<'sidebar' | 'expanded'>('expanded');
   const [ocrReady, setOcrReady] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const sourceRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const jobRef = useRef(0);
@@ -104,6 +110,33 @@ export default function App() {
   const active = providers.find((p) => p.id === preferences.activeProviderId) || providers[0];
   const busy = ['capturing', 'ocr', 'translating'].includes(phase);
   const notify = useCallback((message: string) => setToast(message), []);
+  useEffect(() => {
+    if (!MOBILE) return;
+    const viewport = window.visualViewport;
+    let fullHeight = window.innerHeight;
+    let fullWidth = window.innerWidth;
+    const updateViewport = () => {
+      if (Math.abs(window.innerWidth - fullWidth) > 80) {
+        fullWidth = window.innerWidth;
+        fullHeight = window.innerHeight;
+      }
+      fullHeight = Math.max(fullHeight, window.innerHeight);
+      const height = viewport?.height ?? window.innerHeight;
+      const editable = document.activeElement?.matches('input, textarea, select');
+      setKeyboardOpen(Boolean(editable && fullHeight - height > 150));
+      document.documentElement.style.setProperty('--mobile-visible-height', `${height}px`);
+    };
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    viewport?.addEventListener('resize', updateViewport);
+    document.addEventListener('focusout', updateViewport);
+    return () => {
+      window.removeEventListener('resize', updateViewport);
+      viewport?.removeEventListener('resize', updateViewport);
+      document.removeEventListener('focusout', updateViewport);
+      document.documentElement.style.removeProperty('--mobile-visible-height');
+    };
+  }, []);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(''), 3000);
@@ -184,6 +217,21 @@ export default function App() {
     setPhase('idle');
     setError('');
   }, []);
+  useEffect(() => {
+    if (!MOBILE) return;
+    let paused = false;
+    const onVisibility = () => {
+      if (document.hidden && ['ocr', 'translating'].includes(phaseRef.current)) {
+        stop();
+        paused = true;
+      } else if (!document.hidden && paused) {
+        paused = false;
+        notify('已停止后台任务，可重新识别或翻译。');
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [stop, notify]);
   const updatePreferences = (patch: Partial<Preferences>) => {
     if (patch.sourceLang || patch.targetLang || patch.activeProviderId || patch.ocrLang) stop();
     setPreferences((p) => ({ ...p, ...patch }));
@@ -415,7 +463,23 @@ export default function App() {
 
   const capture = useCallback(async () => {
     if (MOBILE) {
-      fileRef.current?.click();
+      if (!isNative) {
+        fileRef.current?.click();
+        return;
+      }
+      stop();
+      const job = jobRef.current;
+      setPhase('capturing');
+      try {
+        const selected = await pickMobileImage();
+        if (job !== jobRef.current) return;
+        setPhase('idle');
+        if (selected) await handleImage(selected.dataUrl);
+      } catch (cause) {
+        if (job !== jobRef.current) return;
+        setError(errorMessage(cause));
+        setPhase('error');
+      }
       return;
     }
     if (!isNative) {
@@ -448,7 +512,7 @@ export default function App() {
       setError(errorMessage(e));
       setPhase('error');
     }
-  }, [stop, notify, macPermission.check]);
+  }, [stop, notify, macPermission.check, handleImage]);
   const capturePreview = useCallback(async () => {
     stop();
     const job = jobRef.current;
@@ -553,12 +617,13 @@ export default function App() {
   const chooseView = (next: View) => {
     setView(next);
     setMenuOpen(false);
+    if (MOBILE) window.scrollTo({ top: 0 });
   };
   const readyCount = providers.filter((provider) => provider.hasKey || isKeylessProvider(provider)).length;
 
   return (
     <div
-      className={`app-shell ${windowMode === 'sidebar' ? 'sidebar-mode' : ''} ${isNativeMac ? 'native-macos' : ''}`}
+      className={`app-shell ${windowMode === 'sidebar' ? 'sidebar-mode' : ''} ${isNativeMac ? 'native-macos' : ''} ${MOBILE ? 'mobile-app' : ''} ${keyboardOpen ? 'keyboard-open' : ''}`}
       onDragOver={(event) => {
         event.preventDefault();
       }}
@@ -567,7 +632,7 @@ export default function App() {
         void importFile(event.dataTransfer.files[0]);
       }}
     >
-      <aside className={`sidebar ${menuOpen ? 'mobile-open' : ''}`}>
+      {!MOBILE && <aside className={`sidebar ${menuOpen ? 'mobile-open' : ''}`}>
         <a
           className="brand"
           href="#"
@@ -646,8 +711,8 @@ export default function App() {
             <span>偏好设置</span>
           </button>
         </div>
-      </aside>
-      {menuOpen && (
+      </aside>}
+      {!MOBILE && menuOpen && (
         <button className="mobile-backdrop" aria-label="关闭菜单" onClick={() => setMenuOpen(false)} />
       )}
       <main className="main">
@@ -659,7 +724,18 @@ export default function App() {
             </button>
           </div>
         )}
-        <header className="topbar" data-tauri-drag-region>
+        {MOBILE ? (
+          <header className="mobile-header">
+            <a className="mobile-brand" href="#" aria-label="轻译首页" onClick={(event) => {
+              event.preventDefault();
+              chooseView('translate');
+            }}>
+              <span className="brand-mark"><Languages size={22} strokeWidth={1.8} /></span>
+              <span><strong>轻译<span className="brand-dot">.</span></strong><small>FASTDICT · {operatingSystem === 'ios' ? 'iOS' : 'ANDROID'}</small></span>
+            </a>
+            <span className="availability"><span className={readyCount ? 'status-dot' : 'status-dot unconfigured'} />{readyCount ? '已就绪' : '待配置 API'}</span>
+          </header>
+        ) : <header className="topbar" data-tauri-drag-region>
           <div className="breadcrumbs" data-tauri-drag-region>
             <button
               className="icon-button menu-toggle"
@@ -717,7 +793,7 @@ export default function App() {
               </button>
             )}
           </div>
-        </header>
+        </header>}
         <div className={`workspace ${view === 'translate' ? 'translation-workspace' : ''}`}>
           {isNativeMac &&
             view === 'translate' &&
@@ -754,8 +830,8 @@ export default function App() {
             <>
               <div className="intro">
                 <div>
-                  <h1>即时翻译</h1>
-                  <p>截图、粘贴或导入图片，译文即时呈现。</p>
+                  <h1>{MOBILE ? '看懂眼前的文字' : '即时翻译'}</h1>
+                  <p>{MOBILE ? '选一张截图，或粘贴一段文字。' : '截图、粘贴或导入图片，译文即时呈现。'}</p>
                 </div>
               </div>
               <div className="capture-bar">
@@ -768,8 +844,8 @@ export default function App() {
                     disabled={phase === 'capturing'}
                   >
                     <ScanLine size={17} />
-                    <span>{MOBILE ? '截图导入' : isNative ? '截图翻译' : '桌面截图翻译'}</span>
-                    <kbd>{shortcutLabels.capture}</kbd>
+                    <span>{MOBILE ? '选取截图' : isNative ? '截图翻译' : '桌面截图翻译'}</span>
+                    {!MOBILE && <kbd>{shortcutLabels.capture}</kbd>}
                   </button>
                   <button
                     className="button secondary"
@@ -781,10 +857,10 @@ export default function App() {
                     <span>粘贴文本</span>
                     {isNativeMac && <kbd>{shortcutLabels.clipboard}</kbd>}
                   </button>
-                  <button className="button subtle" onClick={() => fileRef.current?.click()}>
+                  {!MOBILE && <button className="button subtle" onClick={() => fileRef.current?.click()}>
                     <ImagePlus size={17} />
                     <span>导入图片</span>
-                  </button>
+                  </button>}
                 </div>
                 <span className="capture-hint">
                   <Zap size={13} />
@@ -911,7 +987,7 @@ export default function App() {
                     <textarea
                       ref={sourceRef}
                       aria-label="待翻译文本"
-                      placeholder="粘贴、输入，或截取屏幕上的一段文字…"
+                      placeholder={MOBILE ? '输入文字，或从其他应用复制后粘贴…' : '粘贴、输入，或截取屏幕上的一段文字…'}
                       value={text}
                       spellCheck={false}
                       disabled={phase === 'ocr'}
@@ -953,6 +1029,14 @@ export default function App() {
                       <span>
                         译文 <span className="ai-badge">AI</span>
                       </span>
+                      <div>
+                      {MOBILE && isNative && <button
+                        className="icon-button"
+                        disabled={!output}
+                        aria-label="分享译文"
+                        title="分享译文"
+                        onClick={() => { void shareText(output).catch((cause) => notify(errorMessage(cause))); }}
+                      ><Share2 size={18} /></button>}
                       <button
                         className="icon-button"
                         disabled={!output}
@@ -964,6 +1048,7 @@ export default function App() {
                       >
                         <Copy size={16} />
                       </button>
+                      </div>
                     </div>
                     {output ? (
                       <div
@@ -988,7 +1073,9 @@ export default function App() {
                             : phase === 'translating'
                               ? '正在等待第一段译文'
                               : phase === 'capturing'
-                                ? isNative
+                                ? MOBILE
+                                  ? '请选择一张截图'
+                                  : isNative
                                   ? '正在准备桌面框选'
                                   : '请选择浏览器分享内容'
                                 : '译文将在这里出现'}
@@ -998,7 +1085,7 @@ export default function App() {
                             ? ocrMessage
                             : phase === 'translating'
                               ? '译文会随生成进度逐字呈现'
-                              : '截取屏幕文字，或在左侧输入原文'}
+                              : MOBILE ? '选取截图，或在上方输入原文' : '截取屏幕文字，或在左侧输入原文'}
                         </p>
                         {phase === 'ocr' && (
                           <div className="progress-track">
@@ -1051,7 +1138,7 @@ export default function App() {
                     <ChevronDown size={12} />
                   </div>
                   <div className="translate-actions">
-                    <span className="enter-hint">{shortcutLabels.translate}</span>
+                    {!MOBILE && <span className="enter-hint">{shortcutLabels.translate}</span>}
                     {busy ? (
                       <button className="button stop-button" onClick={stop}>
                         <X size={15} />
@@ -1154,6 +1241,7 @@ export default function App() {
           )}
         </div>
       </main>
+      {MOBILE && <MobileNavigation view={view} onChange={chooseView} />}
       <input
         className="sr-only"
         ref={fileRef}

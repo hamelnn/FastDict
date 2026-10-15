@@ -27,6 +27,7 @@ export const isMobile = operatingSystem === 'ios' || operatingSystem === 'androi
 export const isMac = operatingSystem === 'macos';
 export const isNativeMac = isNative && isMac;
 export const isNativeWindows = isNative && operatingSystem === 'windows';
+export const isNativeMobile = isNative && isMobile;
 export const shortcutLabels = {
   capture: isNativeMac ? '⌥⌘S' : isMac ? '⌘ ⇧ S' : 'Ctrl ⇧ S',
   clipboard: isNativeMac ? '⌥⌘V' : isMac ? '⌘ ⇧ D' : 'Ctrl ⇧ D',
@@ -54,6 +55,34 @@ export async function writeClipboard(text: string): Promise<void> {
   catch { throw new Error('复制失败，请允许剪贴板权限或手动复制。'); }
 }
 
+/** User-initiated system image selection; dismissal is a normal no-op. */
+export async function pickMobileImage(): Promise<Screenshot | null> {
+  if (!isNativeMobile) throw new Error('系统图片选择器仅在手机应用中可用。');
+  const screenshot = await invokeNative<Screenshot | null>('mobile_pick_image');
+  if (screenshot === null) return null;
+  if (!screenshot || !/^data:image\/png;base64,/.test(screenshot.dataUrl)
+    || screenshot.dataUrl.length > 40_000_000
+    || !Number.isInteger(screenshot.width) || !Number.isInteger(screenshot.height)
+    || screenshot.width <= 0 || screenshot.height <= 0
+    || screenshot.width > 4096 || screenshot.height > 4096) {
+    throw new Error('无法读取所选图片，请重新选择截图。');
+  }
+  return screenshot;
+}
+
+export async function shareText(text: string): Promise<void> {
+  if (!text.trim()) throw new Error('请先完成翻译，再分享译文。');
+  if (isNativeMobile) {
+    await invokeNative<void>('mobile_share_text', { text });
+    return;
+  }
+  if (isMobile && navigator.share) {
+    await navigator.share({ title: '轻译', text });
+    return;
+  }
+  throw new Error('当前环境不支持系统分享，请复制译文。');
+}
+
 export async function startCapture(): Promise<void> {
   if (isNative) return invokeNative<void>('start_capture');
   throw new Error('浏览器预览请使用屏幕共享截图；全局截图快捷键需要桌面应用。');
@@ -65,7 +94,7 @@ export async function hideWindow(): Promise<void> { if (isNative) await invokeNa
 
 export interface ShortcutStatus { captureShortcut: string; clipboardShortcut: string; error: string | null; quitShortcut?: string; platform?: string; }
 export async function getShortcutStatus(): Promise<ShortcutStatus | null> {
-  return isNative ? invokeNative<ShortcutStatus>('get_shortcut_status') : null;
+  return isNative && !isMobile ? invokeNative<ShortcutStatus>('get_shortcut_status') : null;
 }
 
 export interface InputHandlers {
@@ -77,7 +106,7 @@ export interface InputHandlers {
 }
 
 export async function listenInputs(handlers: InputHandlers): Promise<() => void> {
-  if (!isNative) return () => undefined;
+  if (!isNative || isMobile) return () => undefined;
   const { listen } = await import('@tauri-apps/api/event');
   const cleanup: Array<() => void> = [];
   try {
