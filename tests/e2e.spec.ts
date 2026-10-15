@@ -304,6 +304,9 @@ interface NativeCaptureTestState {
   emit: (event: string, payload: unknown) => void;
   resolveFinish: (sessionId: number) => void;
   rejectCancel: (sessionId: number) => void;
+  holdImageDecode: () => void;
+  releaseImageDecode: () => void;
+  pendingImageDecodes: () => number;
 }
 
 async function installNativeCaptureMock(page: Page): Promise<void> {
@@ -317,6 +320,15 @@ async function installNativeCaptureMock(page: Page): Promise<void> {
     const listeners = new Map<string, Set<number>>();
     const finishResolvers = new Map<number, () => void>();
     const cancelRejectors = new Map<number, (error: Error) => void>();
+    const decodeResolvers: Array<() => void> = [];
+    let imageDecodeHeld = false;
+    const decodeImage = HTMLImageElement.prototype.decode;
+    HTMLImageElement.prototype.decode = async function () {
+      await decodeImage.call(this);
+      if (imageDecodeHeld && this.alt === '待选择的屏幕截图') {
+        await new Promise<void>(resolve => { decodeResolvers.push(resolve); });
+      }
+    };
     let nextCallback = 1;
     let activeSessionId = 0;
     const state: NativeCaptureTestState = {
@@ -327,6 +339,12 @@ async function installNativeCaptureMock(page: Page): Promise<void> {
       },
       resolveFinish: sessionId => finishResolvers.get(sessionId)?.(),
       rejectCancel: sessionId => cancelRejectors.get(sessionId)?.(new Error('Old capture cancellation failed')),
+      holdImageDecode: () => { imageDecodeHeld = true; },
+      releaseImageDecode: () => {
+        imageDecodeHeld = false;
+        decodeResolvers.splice(0).forEach(resolve => resolve());
+      },
+      pendingImageDecodes: () => decodeResolvers.length,
     };
     const internals = {
       metadata: { currentWindow: { label: 'capture' }, currentWebview: { label: 'capture' } },
@@ -470,5 +488,74 @@ test.describe('native capture frontend', () => {
     await dragRegion(page, { x: 160, y: 160 }, { x: 640, y: 400 });
     await expect.poll(async () => (await nativeCalls(page, 'finish_capture')).length).toBe(1);
     expect((await nativeCalls(page, 'finish_capture'))[0].args).toMatchObject({ sessionId: 42, x: 200, y: 200, width: 600, height: 300 });
+  });
+
+  test('never announces a reset session after its delayed image decode completes', async ({ page }) => {
+    await installNativeCaptureMock(page);
+    await page.goto('/?capture=1');
+    await expect.poll(async () => (await nativeCalls(page, 'capture_overlay_ready')).length).toBeGreaterThan(0);
+    await page.evaluate(() => {
+      const state = (window as unknown as { e2eNativeCapture: NativeCaptureTestState }).e2eNativeCapture;
+      state.holdImageDecode();
+      state.emit('fastdict://capture-start', { sessionId: 41 });
+    });
+    await expect.poll(() => page.evaluate(() => (window as unknown as { e2eNativeCapture: NativeCaptureTestState }).e2eNativeCapture.pendingImageDecodes())).toBeGreaterThan(0);
+    expect(await nativeCalls(page, 'capture_ready')).toHaveLength(0);
+    await page.evaluate(() => (window as unknown as { e2eNativeCapture: NativeCaptureTestState }).e2eNativeCapture.emit('fastdict://capture-reset', { sessionId: 41 }));
+    await expect(page.locator('.capture-standby')).toHaveCount(1);
+    await expect(page.getByRole('img', { name: '待选择的屏幕截图', exact: true })).toHaveCount(0);
+    await page.evaluate(() => (window as unknown as { e2eNativeCapture: NativeCaptureTestState }).e2eNativeCapture.releaseImageDecode());
+    // Observe beyond the readiness timer (40 ms) as well as a normal paint cycle.
+    await page.waitForTimeout(120);
+    expect(await nativeCalls(page, 'capture_ready')).toHaveLength(0);
+    await expect(page.locator('.capture-standby')).toHaveCount(1);
+    await beginNativeSession(page, 42);
+    expect((await nativeCalls(page, 'capture_ready')).map(call => call.args.sessionId)).toEqual([42]);
+  });
+
+  test('announces readiness only once through duplicate starts, selection updates and submission', async ({ page }) => {
+    await installNativeCaptureMock(page);
+    await openNativeCapture(page);
+    await page.evaluate(() => (window as unknown as { e2eNativeCapture: NativeCaptureTestState }).e2eNativeCapture.emit('fastdict://capture-start', { sessionId: 41 }));
+    await dragRegion(page, { x: 200, y: 200 }, { x: 203, y: 203 });
+    await dragRegion(page, { x: 240, y: 180 }, { x: 800, y: 480 });
+    await expect.poll(async () => (await nativeCalls(page, 'finish_capture')).length).toBe(1);
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Escape');
+    await dragRegion(page, { x: 300, y: 300 }, { x: 900, y: 600 });
+    // A callback accidentally recreated by selection/submission renders would
+    // restart decode and announce ready again after its paint/timer fallback.
+    await page.waitForTimeout(120);
+    expect((await nativeCalls(page, 'capture_ready')).map(call => call.args.sessionId)).toEqual([41]);
+    expect(await nativeCalls(page, 'get_capture')).toHaveLength(1);
+    expect(await nativeCalls(page, 'finish_capture')).toHaveLength(1);
+    expect(await nativeCalls(page, 'cancel_capture')).toHaveLength(0);
+  });
+
+  test('keeps the reset overlay empty after late finish and cancellation settlements', async ({ page }) => {
+    await installNativeCaptureMock(page);
+    await openNativeCapture(page);
+    await dragRegion(page, { x: 240, y: 180 }, { x: 800, y: 480 });
+    await expect.poll(async () => (await nativeCalls(page, 'finish_capture')).length).toBe(1);
+    await page.evaluate(() => (window as unknown as { e2eNativeCapture: NativeCaptureTestState }).e2eNativeCapture.emit('fastdict://capture-reset', { sessionId: 41 }));
+    await expect(page.locator('.capture-standby')).toHaveCount(1);
+    await page.evaluate(() => (window as unknown as { e2eNativeCapture: NativeCaptureTestState }).e2eNativeCapture.resolveFinish(41));
+    await expect(page.getByRole('dialog', { name: '选择截图区域' })).toHaveCount(0);
+    await expect(page.getByRole('img', { name: '待选择的屏幕截图', exact: true })).toHaveCount(0);
+
+    await beginNativeSession(page, 42);
+    await page.keyboard.press('Escape');
+    await expect.poll(async () => (await nativeCalls(page, 'cancel_capture')).length).toBe(1);
+    await page.evaluate(() => (window as unknown as { e2eNativeCapture: NativeCaptureTestState }).e2eNativeCapture.emit('fastdict://capture-reset', { sessionId: 42 }));
+    await expect(page.locator('.capture-standby')).toHaveCount(1);
+    await page.evaluate(() => (window as unknown as { e2eNativeCapture: NativeCaptureTestState }).e2eNativeCapture.rejectCancel(42));
+    await page.waitForTimeout(120);
+    await expect(page.locator('.capture-standby')).toHaveCount(1);
+    await expect(page.getByRole('dialog', { name: '选择截图区域' })).toHaveCount(0);
+    await expect(page.getByRole('img', { name: '待选择的屏幕截图', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    expect((await nativeCalls(page, 'capture_ready')).map(call => call.args.sessionId)).toEqual([41, 42]);
+    // DOM reset is only the frontend contract. Native HWND visibility needs the
+    // separate Windows smoke test; this mock deliberately makes no such claim.
   });
 });

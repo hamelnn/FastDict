@@ -125,7 +125,7 @@ pub async fn begin(app: AppHandle) -> Result<(), String> {
         id
     };
     let result = begin_inner(&app, id).await;
-    if result.is_err() && cleanup_session(&app, id) { let _ = crate::show_sidebar_impl(&app); }
+    if result.is_err() && cleanup_session(&app, id, false).unwrap_or(false) { let _ = crate::show_sidebar_impl(&app); }
     result
 }
 
@@ -179,14 +179,9 @@ async fn begin_inner(app: &AppHandle, id: u64) -> Result<(), String> {
     let watchdog_app = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(5)).await;
-        let awaiting_image = {
-            let state = watchdog_app.state::<CaptureState>();
-            let pending = state.inner.lock().map(|inner| {
-                inner.active.as_ref().map(|active| active.id == id && !active.visible).unwrap_or(false)
-            }).unwrap_or(false);
-            pending
-        };
-        if awaiting_image && cleanup_session(&watchdog_app, id) {
+        // Recheck and claim under the same lock: ready/finish may have won the
+        // race while this watchdog was waking up.
+        if cleanup_session(&watchdog_app, id, true).unwrap_or(false) {
             if crate::show_sidebar_impl(&watchdog_app).is_ok() {
                 let _ = watchdog_app.emit_to("main", "fastdict://error", "截图界面未能就绪，请重试或重新启动应用");
             }
@@ -205,7 +200,7 @@ pub fn overlay_ready(app: AppHandle, window: WebviewWindow) -> Result<(), String
         let state = app.state::<CaptureState>();
         let mut inner = state.inner.lock().map_err(|_| "截图状态暂不可用")?;
         inner.overlay_ready = true;
-        inner.active.as_ref().filter(|active| active.frame.is_some() && !active.visible).map(|active| active.id)
+        inner.active.as_ref().filter(|active| active.frame.is_some() && !active.visible && !active.finishing).map(|active| active.id)
     };
     if let Some(id) = pending { emit_start(&app, id)?; }
     eprintln!("FastDict: capture overlay ready");
@@ -228,7 +223,7 @@ pub fn ready(app: AppHandle, window: WebviewWindow, session_id: u64) -> Result<(
         let mut inner = state.inner.lock().map_err(|_| "截图状态暂不可用")?;
         let active = inner.active.as_mut().filter(|active| active.id == session_id).ok_or("截图会话已结束")?;
         if active.frame.is_none() || active.finishing { return Err("截图尚未准备好".into()); }
-        active.visible = true;
+        if active.visible { return Ok(()); }
     }
     #[cfg(target_os = "macos")]
     {
@@ -236,12 +231,18 @@ pub fn ready(app: AppHandle, window: WebviewWindow, session_id: u64) -> Result<(
         window.set_simple_fullscreen(true).map_err(|error| error.to_string())?;
     }
     window.show().map_err(|error| error.to_string())?;
+    {
+        let state = app.state::<CaptureState>();
+        let mut inner = state.inner.lock().map_err(|_| "截图状态暂不可用")?;
+        let active = inner.active.as_mut().filter(|active| active.id == session_id).ok_or("截图会话已结束")?;
+        active.visible = true;
+    }
     window.set_focus().map_err(|error| error.to_string())
 }
 
 pub async fn finish_capture(app: AppHandle, window: WebviewWindow, session_id: u64, x: u32, y: u32, width: u32, height: u32) -> Result<(), String> {
     require_overlay(&window)?;
-    let image = {
+    let frame = {
         let state = app.state::<CaptureState>();
         let mut inner = state.inner.lock().map_err(|_| "截图状态暂不可用")?;
         let active = inner.active.as_mut().filter(|active| active.id == session_id).ok_or("截图会话已结束")?;
@@ -250,14 +251,23 @@ pub async fn finish_capture(app: AppHandle, window: WebviewWindow, session_id: u
         if width == 0 || height == 0 || x >= image.width() || y >= image.height()
             || width > image.width() - x || height > image.height() - y { return Err("请选择屏幕内的有效区域".into()); }
         active.finishing = true;
-        active.frame.take().ok_or("截图已结束")?.image
+        active.frame.take().ok_or("截图已结束")?
     };
     // Remove the overlay as soon as the user releases the selection.
-    hide_overlay(&app);
+    if let Err(error) = hide_overlay(&app, session_id) {
+        let state = app.state::<CaptureState>();
+        let mut inner = state.inner.lock().map_err(|_| "截图状态暂不可用")?;
+        if let Some(active) = inner.active.as_mut().filter(|active| active.id == session_id) {
+            active.frame = Some(frame);
+            active.finishing = false;
+        }
+        return Err(error);
+    }
     let result = tauri::async_runtime::spawn_blocking(move || {
-        encode(&image::imageops::crop_imm(&image, x, y, width, height).to_image())
+        encode(&image::imageops::crop_imm(&frame.image, x, y, width, height).to_image())
     }).await.map_err(|error| error.to_string()).and_then(|result| result);
-    if !cleanup_session(&app, session_id) { return Ok(()); }
+    if !reset_hidden_session(&app, session_id)? { return Ok(()); }
+    crate::diagnostics::record(&app, "capture-completed");
     crate::show_sidebar_impl(&app)?;
     let screenshot = result.map_err(|error| {
         let _ = app.emit_to("main", "fastdict://error", error.clone());
@@ -268,7 +278,10 @@ pub async fn finish_capture(app: AppHandle, window: WebviewWindow, session_id: u
 
 pub fn cancel_capture(app: AppHandle, window: WebviewWindow, session_id: u64) -> Result<(), String> {
     require_overlay(&window)?;
-    if cancel_session(&app, session_id)? { crate::show_sidebar_impl(&app)?; }
+    if cancel_session(&app, session_id)? {
+        crate::diagnostics::record(&app, "capture-cancelled");
+        crate::show_sidebar_impl(&app)?;
+    }
     Ok(())
 }
 
@@ -282,34 +295,99 @@ pub fn cancel_window(app: &AppHandle) -> Result<bool, String> {
 }
 
 fn cancel_session(app: &AppHandle, id: u64) -> Result<bool, String> {
+    cleanup_session(app, id, false)
+}
+
+fn cleanup_session(app: &AppHandle, id: u64, pending_only: bool) -> Result<bool, String> {
+    {
+        let state = app.state::<CaptureState>();
+        let mut inner = state.inner.lock().map_err(|_| "截图状态暂不可用")?;
+        let Some(active) = inner.active.as_mut().filter(|active| active.id == id) else { return Ok(false); };
+        if pending_only && (active.visible || active.finishing) { return Ok(false); }
+        if active.finishing { return Err("选区正在处理中，请稍候".into()); }
+        active.finishing = true;
+    }
+    // Do not hold the session lock while waiting for the UI thread. In particular,
+    // a pending capture-ready command on that thread also needs this lock.
+    if let Err(error) = hide_overlay(app, id) {
+        let state = app.state::<CaptureState>();
+        if let Ok(mut inner) = state.inner.lock() {
+            if let Some(active) = inner.active.as_mut().filter(|active| active.id == id) {
+                active.finishing = false;
+            }
+        }
+        return Err(error);
+    }
+    reset_hidden_session(app, id)
+}
+
+// Only call after hide_overlay succeeds; finishing keeps ready from showing it
+// again while a selected image is being encoded.
+fn reset_hidden_session(app: &AppHandle, id: u64) -> Result<bool, String> {
     let state = app.state::<CaptureState>();
     let mut inner = state.inner.lock().map_err(|_| "截图状态暂不可用")?;
-    let Some(active) = inner.active.as_ref().filter(|active| active.id == id) else { return Ok(false); };
-    if active.finishing { return Err("选区正在处理中，请稍候".into()); }
-    hide_overlay(app);
+    if inner.active.as_ref().map(|active| active.id) != Some(id) { return Ok(false); }
+    // Clear the preview only after the native window is confirmed hidden.
     let _ = app.emit_to(OVERLAY_LABEL, "fastdict://capture-reset", SessionEvent { session_id: id });
     inner.active = None;
     Ok(true)
 }
 
-fn cleanup_session(app: &AppHandle, id: u64) -> bool {
-    let state = app.state::<CaptureState>();
-    let Ok(mut inner) = state.inner.lock() else { return false; };
-    if inner.active.as_ref().map(|active| active.id) != Some(id) { return false; }
-    hide_overlay(app);
-    let _ = app.emit_to(OVERLAY_LABEL, "fastdict://capture-reset", SessionEvent { session_id: id });
-    inner.active = None;
-    true
+fn hide_overlay(app: &AppHandle, id: u64) -> Result<(), String> {
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    let ui_app = app.clone();
+    // Setters invoked from a worker are normally queued. Perform the entire
+    // transition together on the UI thread before clearing the renderer.
+    app.run_on_main_thread(move || {
+        let result = (|| {
+            {
+                let state = ui_app.state::<CaptureState>();
+                let inner = state.inner.lock().map_err(|_| "截图状态暂不可用")?;
+                if !inner.active.as_ref().is_some_and(|active| active.id == id && active.finishing) {
+                    return Err("截图会话已结束".into());
+                }
+            }
+            hide_overlay_on_main_thread(&ui_app)
+        })();
+        if result.is_err() { crate::diagnostics::record(&ui_app, "capture-overlay-hide-failed"); }
+        let _ = sender.send(result);
+    }).map_err(|error| error.to_string())?;
+    receiver.recv().map_err(|_| "截图窗口未能完成隐藏".to_string())?
 }
 
-fn hide_overlay(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window(OVERLAY_LABEL) {
-        let _ = window.hide();
-        #[cfg(target_os = "macos")]
-        let _ = window.set_simple_fullscreen(false);
-        #[cfg(not(target_os = "macos"))]
-        let _ = window.set_fullscreen(false);
+fn hide_overlay_on_main_thread(app: &AppHandle) -> Result<(), String> {
+    let Some(window) = app.get_webview_window(OVERLAY_LABEL) else { return Ok(()); };
+    #[cfg(target_os = "macos")]
+    {
+        window.hide().map_err(|error| error.to_string())?;
+        window.set_simple_fullscreen(false).map_err(|error| error.to_string())?;
     }
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Windows restores WINDOWPLACEMENT when leaving fullscreen, which can
+        // show the HWND again. Hiding first leaves an empty fullscreen WebView.
+        let fullscreen_result = window.set_fullscreen(false);
+        let hide_result = window.hide();
+        #[cfg(target_os = "windows")]
+        if window.is_visible().map_err(|error| error.to_string())? {
+            // Tao may cache "hidden" even when native placement restored the
+            // HWND. Bypass that cache only for our own capture window.
+            #[link(name = "user32")]
+            extern "system" {
+                fn ShowWindow(hwnd: *mut std::ffi::c_void, command: i32) -> i32;
+            }
+            let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+            unsafe { ShowWindow(hwnd.0, 0); }
+            crate::diagnostics::record(app, "capture-overlay-hide-fallback");
+        }
+        if window.is_visible().map_err(|error| error.to_string())? {
+            return Err("截图窗口未能隐藏，请按 Ctrl + Alt + Q 退出后重试".into());
+        }
+        fullscreen_result.map_err(|error| error.to_string())?;
+        hide_result.map_err(|error| error.to_string())?;
+    }
+    crate::diagnostics::record(app, "capture-overlay-hidden");
+    Ok(())
 }
 
 pub fn is_active(app: &AppHandle) -> bool {

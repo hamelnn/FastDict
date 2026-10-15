@@ -1,6 +1,6 @@
 [package]
 name = "fastdict"
-version = "0.2.0"
+version = "0.2.1"
 description = "A lightweight screenshot and clipboard translator"
 authors = ["FastDict"]
 edition = "2021"

@@ -4,7 +4,7 @@
 
 React + TypeScript 界面，Tauri 2 原生外壳，复用系统 WebView。
 
-各平台构建产物集中在 [FastDict 0.2.0 下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.2.0)。包含 Windows、macOS、Android 和 iOS 模拟器版本，以及安装说明和 SHA-256 校验清单；iPhone 真机安装需要另行配置 Apple 签名。
+Windows 截图白屏修复见 [FastDict 0.2.1 下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.2.1) 和 [Windows 说明](docs/windows.md)。macOS、Android 和 iOS 模拟器继续使用 [FastDict 0.2.0 下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.2.0) 的构建产物、安装说明和 SHA-256 校验清单；iPhone 真机安装需要另行配置 Apple 签名。
 
 ## 功能
 
@@ -19,12 +19,14 @@ React + TypeScript 界面，Tauri 2 原生外壳，复用系统 WebView。
 
 | 平台 | 当前状态 | 使用与构建 |
 | --- | --- | --- |
-| Windows x64 | 已生成 0.2.0 安装程序和便携 ZIP，安装流程待设备验收 | [Windows 说明](docs/windows.md) |
+| Windows x64 | 0.2.1 便携包实际启动、重复完成/取消截图及退出通过；安装程序待验收 | [Windows 说明](docs/windows.md) |
 | macOS | 已生成并校验 Apple Silicon / Intel 通用 DMG 和应用 ZIP，真机流程待验收 | [macOS 说明](docs/macos.md) |
 | iOS | 模拟器编译、安装启动与画面检查通过；真机签名及功能待验收 | [移动端说明](docs/mobile.md) |
 | Android ARM64 | 已生成并校验 debug APK，设备功能待验收 | [移动端说明](docs/mobile.md) |
 
 仓库提供源码；`release/` 为本地构建输出，不随源码提交。完整截图到真实 API 的桌面流程仍需设备验收，详见 [验证范围](docs/validation.md)。
+
+Windows 0.2.1 将截图收尾改为先退出全屏、再隐藏截图窗口，并确认原生窗口已隐藏后才清空截图预览，避免侧栏弹出后留下空白遮罩。42 项前端交互回归通过；最终便携包在当前 Windows 显示器与缩放设置下，完成截图和取消截图各实测两次，均恢复侧栏且无白屏。本轮使用空白选区验证收尾与本地 OCR，没有调用真实 API；其他平台发行版本保持 0.2.0。
 
 ## 桌面用法
 

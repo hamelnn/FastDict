@@ -1,10 +1,20 @@
 # Windows 桌面版
 
-支持 Windows 10/11 x64。0.2.0 已生成 NSIS 安装程序与便携 ZIP，并核对实际版本、依赖、文件大小及 SHA-256；安装程序尚未在用户系统执行安装。产物未签名。
+支持 Windows 10/11 x64。0.2.1 修复截图结束后侧栏弹出、其余屏幕仍显示白底的问题；最终便携 ZIP 已解压运行，重复完成截图、取消截图和退出均通过本轮 Windows 实测。NSIS 安装程序已生成，但尚未在用户系统执行安装。产物未签名。
+
+## 0.2.1 截图白屏修复
+
+截图完成或取消时，Windows 先退出全屏，再隐藏截图窗口；这些操作在原生界面线程依次执行。只有确认截图窗口已隐藏，才发送重置事件并清空截图预览，防止窗口仍可见时露出白色背景。重复就绪通知也不会再次显示同一截图会话。
+
+38 项核心测试、19 项构建脚本测试和 42 项前端交互回归全部通过，包括延迟图片解码、重复交互及会话重置后的迟到回调。
+
+本轮从最终 0.2.1 ZIP 解压后启动，连续执行两次 `Ctrl+Shift+S` → `Esc` 取消，以及两次拖选 20×20 纯色空白区域后松手完成。四次结束后截图窗口均不在可见窗口列表，原生可见性检查确认已隐藏，侧栏正常恢复且无白屏；`Ctrl+Alt+Q` 也成功退出。两次完成均在本机 OCR 后提示“未识别到文字”，未调用真实 API，已有配置和历史保持不变。
+
+此结论限定于当前 Windows 显示器与缩放设置，不代表多显示器、其他 DPI 或截图到真实 API 的完整翻译验收。本次发行修复仅针对 Windows，其他平台保持 0.2.0。
 
 ## 使用
 
-从 [GitHub Release](https://github.com/hamelnn/FastDict/releases/tag/v0.2.0) 下载 `FastDict_0.2.0_x64-setup.exe` 安装，或解压便携 ZIP，保持 `FastDict.exe` 与附带 DLL 在同一文件夹后运行。若系统缺少 WebView2 Runtime，请从 [Microsoft 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。
+从 [0.2.1 GitHub Release](https://github.com/hamelnn/FastDict/releases/tag/v0.2.1) 下载 `FastDict_0.2.1_x64-setup.exe` 或 `FastDict-Windows-x64-0.2.1.zip`。便携版需解压后运行，并保持 `FastDict.exe` 与附带 DLL 在同一文件夹。若系统缺少 WebView2 Runtime，请从 [Microsoft 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。
 
 首次打开，在偏好设置添加翻译服务、API 地址、模型和密钥，再选择 OCR 与目标语言。
 
@@ -43,6 +53,6 @@ npm run windows:build -- --target=x86_64-pc-windows-gnu
 
 启动失败时可使用恢复界面的“重新加载”或“退出应用”。标题栏 X 和原生快捷键 `Ctrl+Alt+Q` 独立于网页界面；升级保留既有配置与密钥。
 
-诊断日志位于 `%LOCALAPPDATA%\app.fastdict.translate\logs\startup.log`，仅记录固定启动阶段，不记录截图、文本、服务地址或 API Key。日志达到 256 KiB 后轮转一次。
+诊断日志位于 `%LOCALAPPDATA%\app.fastdict.translate\logs\startup.log`，仅记录固定启动与截图窗口状态，不记录截图、文本、服务地址或 API Key。日志达到 256 KiB 后轮转一次。
 
 完整设备验收边界见 [验证范围](validation.md)，通用开发与测试见 [开发指南](development.md)。
