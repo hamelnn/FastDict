@@ -10,8 +10,9 @@ export const androidTargets = {
   i686: { rust: 'i686-linux-android', abi: 'x86' },
 };
 export const iosTargets = {
-  'aarch64-sim': { rust: 'aarch64-apple-ios-sim', arch: 'arm64' },
-  x86_64: { rust: 'x86_64-apple-ios', arch: 'x86_64' },
+  aarch64: { rust: 'aarch64-apple-ios', arch: 'arm64', sdk: 'iphoneos' },
+  'aarch64-sim': { rust: 'aarch64-apple-ios-sim', arch: 'arm64', sdk: 'iphonesimulator' },
+  x86_64: { rust: 'x86_64-apple-ios', arch: 'x86_64', sdk: 'iphonesimulator' },
 };
 
 function latestDirectory(path, exists, list) {
@@ -62,11 +63,14 @@ function rustCheck(target, env, run) {
   const parsed = /^rustc\s+(\d+)\.(\d+)\./.exec(rustVersion);
   if (!parsed || +parsed[1] < 1 || +parsed[1] === 1 && +parsed[2] < 90) throw new Error('构建需要 Rust 1.90 或更新版本。');
   commandOutput('cargo', ['--version'], env, run);
+  // Interactive dev chooses its actual architecture after Tauri discovers the
+  // selected device. Initializing a project does not compile it at all.
+  if (!target) return;
   const installed = new Set(commandOutput('rustup', ['target', 'list', '--installed'], env, run).split(/\s+/));
   if (!installed.has(target)) throw new Error(`缺少 Rust 移动目标，请先运行：rustup target add ${target}`);
 }
 
-export function androidPreflight({ target = 'aarch64', env = process.env, platform = process.platform, exists = existsSync, list = readdirSync, run = spawnSync } = {}) {
+export function androidPreflight({ target = 'aarch64', action = 'build', env = process.env, platform = process.platform, exists = existsSync, list = readdirSync, run = spawnSync } = {}) {
   if (!androidTargets[target]) throw new Error('Android 构建目标无效。');
   if (!['win32', 'darwin', 'linux'].includes(platform)) throw new Error('Android 构建需要 Windows、macOS 或 Linux 主机。');
   const executable = platform === 'win32' ? '.exe' : '';
@@ -87,19 +91,20 @@ export function androidPreflight({ target = 'aarch64', env = process.env, platfo
   const version = commandOutput(java, ['-version'], env, run);
   const major = /version\s+"(\d+)/.exec(version)?.[1];
   if (!major || +major < 17) throw new Error('Android 构建需要 JDK 17 或更新版本。');
-  rustCheck(androidTargets[target].rust, env, run);
+  rustCheck(['init', 'dev'].includes(action) ? undefined : androidTargets[target].rust, env, run);
   return { target, sdk, buildTools, java, abi: androidTargets[target].abi };
 }
 
-export function iosPreflight({ target = 'aarch64-sim', env = process.env, platform = process.platform, run = spawnSync } = {}) {
+export function iosPreflight({ target = 'aarch64-sim', action = 'build', env = process.env, platform = process.platform, run = spawnSync } = {}) {
   if (platform !== 'darwin') throw new Error('iOS 应用必须在安装完整 Xcode 的 Mac 上构建；Windows 无法生成可验证的 iOS 应用。');
-  if (!iosTargets[target]) throw new Error('此入口仅构建 iOS 模拟器；真机版本需在 Xcode 配置自己的签名。');
+  if (!iosTargets[target]) throw new Error('iOS 构建目标无效。');
   commandOutput('xcodebuild', ['-version'], env, run);
-  const sdk = commandOutput('xcrun', ['--sdk', 'iphonesimulator', '--show-sdk-path'], env, run);
-  if (!sdk) throw new Error('缺少 iOS Simulator SDK，请在 Xcode 中安装。');
-  const runtimes = JSON.parse(commandOutput('xcrun', ['simctl', 'list', 'runtimes', '--json'], env, run));
-  if (!runtimes.runtimes?.some(runtime => runtime.isAvailable && runtime.identifier?.includes('.iOS-'))) throw new Error('缺少可用 iOS Simulator Runtime，请在 Xcode Settings > Components 安装。');
   commandOutput('pod', ['--version'], env, run);
-  rustCheck(iosTargets[target].rust, env, run);
+  const deferredTarget = ['init', 'dev'].includes(action);
+  // Xcode can initialize projects and debug a connected iPhone without any
+  // simulator runtime. Compilation needs the SDK, not a bootable runtime.
+  const sdk = deferredTarget ? undefined : commandOutput('xcrun', ['--sdk', iosTargets[target].sdk, '--show-sdk-path'], env, run);
+  if (!deferredTarget && !sdk) throw new Error(`缺少 ${iosTargets[target].sdk} SDK，请在 Xcode 中安装。`);
+  rustCheck(deferredTarget ? undefined : iosTargets[target].rust, env, run);
   return { target, sdk, arch: iosTargets[target].arch };
 }

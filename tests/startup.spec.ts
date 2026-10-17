@@ -96,10 +96,14 @@ async function installEnvironment(page: Page, storageFault: StorageFault = 'none
 function faultyAppModule(mode: 'react-render' | 'react-effect'): string {
   const original = assets.get(appPath)!.toString('utf8');
   const effectNamespace = original.match(/([A-Za-z_$][\w$]*)\.useEffect\(/)?.[1];
-  const exportedDefault = /export\{\s*[A-Za-z_$][\w$]*\s+as\s+default\s*\};?\s*$/;
-  if (!exportedDefault.test(original) || (mode === 'react-effect' && !effectNamespace)) throw new Error('Unable to inject a test-only React boot fault into the production App chunk.');
+  // Rollup can export a frozen module namespace when the dynamic App chunk
+  // also contains shared helpers. Preserve its other exports and import graph.
+  const namespaceDefault = /(\{__proto__:null,default:)[A-Za-z_$][\w$]*(\},Symbol\.toStringTag)/;
+  const exportedDefault = /\b[A-Za-z_$][\w$]*\s+as\s+default\b/;
+  if ((!namespaceDefault.test(original) && !exportedDefault.test(original)) || (mode === 'react-effect' && !effectNamespace)) throw new Error('Unable to inject a test-only React boot fault into the production App chunk.');
   const body = mode === 'react-render' ? `throw new Error(${JSON.stringify(injectedError)});` : `${effectNamespace}.useEffect(()=>{throw new Error(${JSON.stringify(injectedError)})},[]);return null;`;
-  return original.replace(exportedDefault, `function E2eBootFault(){${body}}export{E2eBootFault as default};`);
+  const patched = namespaceDefault.test(original) ? original.replace(namespaceDefault, '$1E2eBootFault$2') : original.replace(exportedDefault, 'E2eBootFault as default');
+  return patched + `\nfunction E2eBootFault(){${body}}`;
 }
 
 async function serveProduction(context: BrowserContext, initialFault: BootFault = 'none') {
@@ -173,6 +177,7 @@ test('boots production assets and CSP on the Windows Tauri origin without a dev 
   expect(served.responses.some(response => response.path === appPath && response.contentType === 'text/javascript')).toBe(true);
   expect(await page.evaluate(() => (window as unknown as { e2eBoot: BootTestState }).e2eBoot.writes)).toEqual([]);
   await page.getByRole('button', { name: /^偏好设置/ }).click();
+  await page.getByRole('button', { name: '高级设置', exact: true }).click();
   await page.getByRole('button', { name: /^退出\s*FastLingo$/ }).click();
   await expect.poll(async () => (await bootCalls(page, 'quit_app')).length).toBe(1);
 });

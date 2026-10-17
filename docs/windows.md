@@ -1,5 +1,9 @@
 # FastLingo · Windows 桌面版
 
+## 0.5.0 发布准备
+
+本次包含可编辑翻译提示词、纯白 / 纯黑系统主题、简化设置与高级设置，以及配置保存、流式输出、OCR 和截图取消等审查修复。347 项本地自动化通过；本次安装包和 GUI 实测状态以 [验证记录](validation.md) 为准，下面旧版本的实测结果不自动适用于 0.5.0。
+
 ## 0.4.0 预发布：官方 ChatGPT 登录
 
 0.4.0 预发布版改用官方 [Sign in with ChatGPT](chatgpt.md)。添加“ChatGPT 订阅”服务后，点击 **Continue with ChatGPT**，在系统浏览器为 FastLingo 登录授权，再从账号模型目录选择模型并保存。默认 `gpt-6-luna`，以当前账号实际可用目录为准。
@@ -34,7 +38,9 @@
 
 ## 使用
 
-从 [0.4.0 预发布下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.4.0) 下载 [FastLingo_0.4.0_x64-setup.exe](https://github.com/hamelnn/FastDict/releases/download/v0.4.0/FastLingo_0.4.0_x64-setup.exe) 或 [FastLingo-Windows-x64-0.4.0.zip](https://github.com/hamelnn/FastDict/releases/download/v0.4.0/FastLingo-Windows-x64-0.4.0.zip)。便携版需解压后运行，并保持 `FastLingo.exe` 与附带 DLL 在同一文件夹。若系统缺少 WebView2 Runtime，请从 [Microsoft 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。
+0.5.0 采用系统明暗主题。主设置管理服务、自动翻译和提示词；OCR 语言、关闭/托盘选项、开机启动和快捷键在“高级设置”。提示词支持编辑、保存与恢复默认，变更会停止旧请求并在下一次翻译使用；现有配置和凭据保留。
+
+在 [0.5.0 下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.5.0) 查找 `FastLingo_0.5.0_x64-setup.exe` 或 `FastLingo-Windows-x64-0.5.0.zip`，以实际发布附件为准。便携版需解压后运行，并保持 `FastLingo.exe` 与附带 DLL 在同一文件夹。若系统缺少 WebView2 Runtime，请从 [Microsoft 官方页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。
 
 首次打开没有预设服务。在偏好设置添加 API 地址、模型和密钥，或选择“ChatGPT 订阅”并在浏览器为 FastLingo 单独授权，再选择 OCR 与目标语言。配置见 [ChatGPT 登录说明](chatgpt.md)。
 
@@ -60,14 +66,16 @@ npm run windows:build
 npm run windows:installer
 ```
 
-脚本默认使用 MSVC；存在项目内 `.build-tools` 工具链时使用 GNU。也可指定已安装的目标：
+脚本默认目标跟随当前 `rustc` 的主机工具链；显式设置的 `CARGO_HOME` / `RUSTUP_HOME` 优先，不再被项目内旧 `.build-tools` 覆盖。未设置这两个变量且存在完整的项目便携 Cargo 时，才使用项目工具链。也可指定已安装的目标：
 
 ```sh
 npm run windows:build -- --target=x86_64-pc-windows-msvc
 npm run windows:build -- --target=x86_64-pc-windows-gnu
 ```
 
-输出位于 `release/`：可执行文件、运行库、ZIP、可选安装程序和包含 SHA-256 的 `manifest.json`。NSIS 工具缓存在项目的 `src-tauri/target/.tauri` 内。也可手动运行 **Build Windows installer and portable app** 工作流，在 Windows runner 上使用 MSVC 打包。二进制通过 GitHub Release 分发，不提交到源码目录。
+输出位于 `release/`：可执行文件、运行库、ZIP、可选安装程序和包含 SHA-256 的 `manifest.json`。脚本先读取 Cargo 的 `target_directory`，再以同一绝对 `CARGO_TARGET_DIR` 编译、取出可执行文件及生成安装器；支持自定义环境变量和 Cargo 配置，不扫描默认目录寻找旧产物。依赖使用 `--locked`。`--package-only` 已移除，每次打包都必须构建当前源码。
+
+外层 `manifest.json` 只列实际交付的版本 ZIP、可选安装器及说明文件；ZIP 内的 `portable-manifest.json` 单独列可执行文件和运行库。无版本 ZIP 仅作为本地便捷副本。**Build Windows installer and portable app** 工作流只上传清单中的交付文件，并重新下载校验全部哈希；不会重复上传相同内容的 ZIP。二进制通过 GitHub Release 分发，不提交到源码目录。
 
 ## 启动异常
 

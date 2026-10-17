@@ -1,4 +1,7 @@
 mod secrets;
+mod ipc_access;
+#[cfg(all(desktop, not(target_os = "macos")))]
+mod sidebar_geometry;
 mod diagnostics;
 mod macos;
 mod mobile;
@@ -116,7 +119,7 @@ mod desktop {
             tauri::async_runtime::spawn(async move {
                 // Show first; clipboard IPC runs on a worker without delaying the panel.
                 if show_sidebar_impl(&app).is_err() { return; }
-                match read_clipboard(app.clone()).await {
+                match read_clipboard_impl(app.clone()).await {
                     Ok(text) if !text.trim().is_empty() => { let _ = app.emit_to("main", "fastdict://clipboard", text); }
                     Ok(_) => report_error(&app, "剪贴板没有文本，请先复制要翻译的内容".into()),
                     Err(error) => report_error(&app, error),
@@ -261,17 +264,7 @@ pub(crate) fn show_sidebar_impl(app: &AppHandle) -> Result<(), String> {
             }
             #[cfg(not(target_os = "macos"))]
             {
-            let margin = (16.0 * monitor.scale_factor()).round() as u32;
-            let width = (440.0 * monitor.scale_factor()).round() as u32;
-            let width = width.min(area.size.width.saturating_sub(2 * margin)).max(1);
-            let height = area.size.height.saturating_sub(2 * margin).max(1);
-            // Move before sizing so Windows applies the destination monitor's
-            // DPI transition before the final physical dimensions.
-            window.set_position(tauri::PhysicalPosition::new(
-                area.position.x + area.size.width as i32 - width as i32 - margin as i32,
-                area.position.y + margin as i32,
-            )).map_err(|error| error.to_string())?;
-            window.set_size(tauri::PhysicalSize::new(width, height)).map_err(|error| error.to_string())?;
+            sidebar_geometry::place(app, &window, area.position, area.size, monitor.scale_factor())?;
             }
         } else {
             window.set_size(tauri::LogicalSize::new(440.0, 740.0)).map_err(|error| error.to_string())?;
@@ -294,6 +287,7 @@ fn expand_window_impl(app: &AppHandle) -> Result<(), String> {
     {
         window.set_always_on_top(false).map_err(|error| error.to_string())?;
         window.unmaximize().map_err(|error| error.to_string())?;
+        window.set_min_size(Some(tauri::LogicalSize::new(360.0, 480.0))).map_err(|error| error.to_string())?;
         window.set_size(tauri::LogicalSize::new(1120.0, 780.0)).map_err(|error| error.to_string())?;
         window.center().map_err(|error| error.to_string())?;
         window.unminimize().map_err(|error| error.to_string())?;
@@ -304,13 +298,14 @@ fn expand_window_impl(app: &AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn show_sidebar(app: AppHandle) -> Result<(), String> { show_sidebar_impl(&app) }
+fn show_sidebar(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), String> { ipc_access::require_main(&window)?; show_sidebar_impl(&app) }
 
 #[tauri::command]
-fn expand_window(app: AppHandle) -> Result<(), String> { expand_window_impl(&app) }
+fn expand_window(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), String> { ipc_access::require_main(&window)?; expand_window_impl(&app) }
 
 #[tauri::command]
-fn hide_window(app: AppHandle) -> Result<(), String> {
+fn hide_window(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), String> {
+    ipc_access::require_main(&window)?;
     #[cfg(desktop)]
     {
         if !app.state::<desktop::DesktopState>().tray_ready.load(std::sync::atomic::Ordering::SeqCst) {
@@ -322,7 +317,7 @@ fn hide_window(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn get_screen_permission() -> macos::ScreenPermission { macos::screen_permission() }
+fn get_screen_permission(window: tauri::WebviewWindow) -> Result<macos::ScreenPermission, String> { ipc_access::require_main(&window)?; Ok(macos::screen_permission()) }
 
 #[tauri::command]
 async fn request_screen_permission(app: AppHandle, window: tauri::WebviewWindow) -> Result<macos::ScreenPermission, String> {
@@ -357,14 +352,20 @@ async fn open_screen_permission_settings(window: tauri::WebviewWindow) -> Result
 }
 
 #[tauri::command]
-async fn read_clipboard(app: AppHandle) -> Result<String, String> {
+async fn read_clipboard(app: AppHandle, window: tauri::WebviewWindow) -> Result<String, String> {
+    ipc_access::require_main(&window)?;
+    read_clipboard_impl(app).await
+}
+
+async fn read_clipboard_impl(app: AppHandle) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         app.clipboard().read_text().map_err(|error| format!("无法读取剪贴板：{error}"))
     }).await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-async fn write_clipboard(app: AppHandle, text: String) -> Result<(), String> {
+async fn write_clipboard(app: AppHandle, window: tauri::WebviewWindow, text: String) -> Result<(), String> {
+    ipc_access::require_main(&window)?;
     tauri::async_runtime::spawn_blocking(move || {
         app.clipboard().write_text(text).map_err(|error| format!("无法写入剪贴板：{error}"))
     }).await.map_err(|error| error.to_string())?
@@ -393,6 +394,22 @@ fn capture_overlay_ready(app: AppHandle, window: tauri::WebviewWindow) -> Result
     { capture::overlay_ready(app, window) }
     #[cfg(mobile)]
     { let _ = (app, window); Ok(()) }
+}
+
+#[tauri::command]
+fn recover_capture(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), String> {
+    #[cfg(desktop)]
+    { capture::recover(app, window) }
+    #[cfg(mobile)]
+    { let _ = (app, window); Err("截图恢复仅适用于桌面端".into()) }
+}
+
+#[tauri::command]
+fn capture_boot_error(app: AppHandle, window: tauri::WebviewWindow, stage: String) -> Result<(), String> {
+    #[cfg(desktop)]
+    { capture::report_boot_error(app, window, &stage) }
+    #[cfg(mobile)]
+    { let _ = (app, window, stage); Err("截图诊断仅适用于桌面端".into()) }
 }
 
 #[tauri::command]
@@ -426,8 +443,10 @@ fn report_boot_error(app: AppHandle, window: tauri::WebviewWindow, stage: String
 }
 
 #[tauri::command]
-fn quit_app(app: AppHandle) {
+fn quit_app(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), String> {
+    ipc_access::require_main(&window)?;
     app.exit(0);
+    Ok(())
 }
 
 #[tauri::command]
@@ -447,7 +466,8 @@ fn cancel_capture(app: AppHandle, window: tauri::WebviewWindow, session_id: u64)
 }
 
 #[tauri::command]
-async fn configure_shortcuts(app: AppHandle, capture_shortcut: String, clipboard_shortcut: String) -> Result<(), String> {
+async fn configure_shortcuts(app: AppHandle, window: tauri::WebviewWindow, capture_shortcut: String, clipboard_shortcut: String) -> Result<(), String> {
+    ipc_access::require_main(&window)?;
     #[cfg(desktop)]
     {
         use tauri_plugin_global_shortcut::GlobalShortcutExt;
@@ -487,7 +507,8 @@ async fn configure_shortcuts(app: AppHandle, capture_shortcut: String, clipboard
 }
 
 #[tauri::command]
-fn get_shortcut_status(app: AppHandle) -> Result<serde_json::Value, String> {
+fn get_shortcut_status(app: AppHandle, window: tauri::WebviewWindow) -> Result<serde_json::Value, String> {
+    ipc_access::require_main(&window)?;
     #[cfg(desktop)]
     {
         let state = app.state::<desktop::DesktopState>();
@@ -532,19 +553,24 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             show_sidebar, expand_window, hide_window, read_clipboard, write_clipboard,
             start_capture, get_capture, finish_capture, cancel_capture,
-            capture_overlay_ready, capture_ready, frontend_ready,
+            capture_overlay_ready, capture_ready, recover_capture, capture_boot_error, frontend_ready,
             report_boot_error, quit_app,
             get_screen_permission, request_screen_permission, open_screen_permission_settings,
             configure_shortcuts, get_shortcut_status,
             desktop_preferences::get_desktop_preferences, desktop_preferences::set_desktop_preferences,
             chatgpt::get_chatgpt_status, chatgpt::sign_in_chatgpt, chatgpt::cancel_chatgpt_sign_in,
             chatgpt::disconnect_chatgpt, chatgpt::open_chatgpt_usage,
-            chatgpt::select_chatgpt_profile,
+            chatgpt::select_chatgpt_profile, chatgpt::forget_chatgpt_profile,
             chatgpt::translate_with_chatgpt, chatgpt::cancel_chatgpt_translation,
             secrets::save_api_key, secrets::get_api_key, secrets::delete_api_key,
             mobile::mobile_pick_image, mobile::mobile_share_text,
         ])
         .setup(|app| {
+            #[cfg(desktop)]
+            if let Some(window) = app.get_webview_window("main") {
+                let shade = if matches!(window.theme(), Ok(tauri::Theme::Dark)) { 0 } else { 255 };
+                let _ = window.set_background_color(Some(tauri::window::Color(shade, shade, shade, 255)));
+            }
             #[cfg(desktop)]
             desktop::setup(app)?;
             Ok(())
@@ -556,6 +582,15 @@ pub fn run() {
             }
         })
         .on_window_event(|window, event| {
+            #[cfg(desktop)]
+            if let tauri::WindowEvent::ThemeChanged(theme) = event {
+                if window.label() == "main" {
+                    let shade = if *theme == tauri::Theme::Dark { 0 } else { 255 };
+                    if let Some(webview) = window.app_handle().get_webview_window("main") {
+                        let _ = webview.set_background_color(Some(tauri::window::Color(shade, shade, shade, 255)));
+                    }
+                }
+            }
             #[cfg(desktop)]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {

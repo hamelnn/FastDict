@@ -23,6 +23,11 @@ pub struct ProfileInfo {
     pub plan_enabled: bool,
 }
 
+pub struct ConnectionSnapshot {
+    pub account: ConnectionStatus,
+    pub profiles: Vec<ProfileInfo>,
+}
+
 // Deliberately neither Debug nor Serialize. Only the native HTTP transport sees this.
 pub(crate) struct Credentials {
     pub(crate) access_token: String,
@@ -35,7 +40,7 @@ impl Drop for Credentials {
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 pub use native::{AuthState, cancel_sign_in, credentials, disconnect, invalidate_and_refresh,
-    profiles, select_profile, shutdown, sign_in, status};
+    snapshot, select_profile, forget_profile, shutdown, sign_in};
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 mod unsupported {
@@ -43,15 +48,15 @@ mod unsupported {
     #[derive(Default)]
     pub struct AuthState;
     const UNSUPPORTED: &str = "ChatGPT 登录目前仅支持 Windows 和 macOS 桌面应用";
-    pub async fn status(_: &AppHandle) -> Result<ConnectionStatus, String> { Err(UNSUPPORTED.into()) }
+    pub async fn snapshot(_: &AppHandle) -> Result<ConnectionSnapshot, String> { Err(UNSUPPORTED.into()) }
     pub async fn sign_in(_: &AppHandle, _: bool) -> Result<ConnectionStatus, String> { Err(UNSUPPORTED.into()) }
     pub fn cancel_sign_in(_: &AppHandle) {}
     pub fn shutdown(_: &AppHandle) {}
     pub async fn disconnect(_: &AppHandle) -> Result<ConnectionStatus, String> { Err(UNSUPPORTED.into()) }
     pub async fn credentials(_: &AppHandle) -> Result<Credentials, String> { Err(UNSUPPORTED.into()) }
     pub async fn invalidate_and_refresh(_: &AppHandle, _: &str, _: &str) -> Result<Credentials, String> { Err(UNSUPPORTED.into()) }
-    pub async fn profiles(_: &AppHandle) -> Result<Vec<ProfileInfo>, String> { Err(UNSUPPORTED.into()) }
     pub async fn select_profile(_: &AppHandle, _: &str) -> Result<ConnectionStatus, String> { Err(UNSUPPORTED.into()) }
+    pub async fn forget_profile(_: &AppHandle, _: &str) -> Result<ConnectionStatus, String> { Err(UNSUPPORTED.into()) }
 }
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub use unsupported::*;
@@ -177,6 +182,27 @@ mod native {
     impl Database {
         fn active_profile(&self) -> Option<&Profile> {
             self.active.as_ref().and_then(|id| self.profiles.iter().find(|profile| &profile.id == id))
+        }
+        fn ensure_registration_capacity(&self) -> Result<(), String> {
+            if self.profiles.len() >= 64 { Err("保存的 ChatGPT 连接已达上限，请先选择并忘记不再使用的连接".into()) }
+            else { Ok(()) }
+        }
+        fn registration_label(&self) -> String {
+            let mut index = self.profiles.len() + 1;
+            loop {
+                let label = format!("连接 {index}");
+                if !self.profiles.iter().any(|profile| profile.label == label) { return label; }
+                index += 1;
+            }
+        }
+        fn forget_profile(&mut self, profile_id: &str) -> Result<(), String> {
+            let index = self.profiles.iter().position(|profile| profile.id == profile_id).ok_or("所选 ChatGPT 连接不存在")?;
+            self.profiles.remove(index);
+            // Do not silently switch to another account when removing the active
+            // registration; the user chooses any replacement explicitly.
+            if self.active.as_deref() == Some(profile_id) { self.active = None; }
+            if self.pending_profile.as_deref() == Some(profile_id) { self.pending_profile = None; }
+            Ok(())
         }
         fn validate(&self) -> Result<(), String> {
             let host = self.host_id.strip_prefix("urn:uuid:").and_then(|value| Uuid::parse_str(value).ok());
@@ -338,19 +364,19 @@ mod native {
         match profile.email.as_ref() { Some(email) => format!("{} · {}", email, profile.label), None => profile.label.clone() }
     }
 
-    pub async fn status(app: &AppHandle) -> Result<ConnectionStatus, String> {
-        let state = app.state::<AuthState>();
-        let _operation = state.operation.lock().await;
-        let store = open_store(app).await?;
-        Ok(connection(&store.database, None))
+    fn database_snapshot(database: &Database) -> ConnectionSnapshot {
+        ConnectionSnapshot { account: connection(database, None),
+            profiles: database.profiles.iter().map(|profile| ProfileInfo { id: profile.id.clone(), label: label(profile),
+                active: database.active.as_ref() == Some(&profile.id), connected: profile.tokens.is_some(),
+                plan_enabled: profile.tokens.as_ref().is_some_and(plan_enabled) }).collect() }
     }
-    pub async fn profiles(app: &AppHandle) -> Result<Vec<ProfileInfo>, String> {
+    pub async fn snapshot(app: &AppHandle) -> Result<ConnectionSnapshot, String> {
         let state = app.state::<AuthState>();
         let _operation = state.operation.lock().await;
         let store = open_store(app).await?;
-        Ok(store.database.profiles.iter().map(|profile| ProfileInfo { id: profile.id.clone(), label: label(profile),
-            active: store.database.active.as_ref() == Some(&profile.id), connected: profile.tokens.is_some(),
-            plan_enabled: profile.tokens.as_ref().is_some_and(plan_enabled) }).collect())
+        // Account and profile rows must come from the same locked database read.
+        // Each open otherwise invokes the OS vault and decrypts the full store.
+        Ok(database_snapshot(&store.database))
     }
     pub async fn select_profile(app: &AppHandle, profile_id: &str) -> Result<ConnectionStatus, String> {
         cancel_sign_in(app);
@@ -658,6 +684,7 @@ mod native {
                 store.database.active_profile().cloned().or_else(|| store.database.pending_profile.as_ref()
                     .and_then(|id| store.database.profiles.iter().find(|profile| &profile.id == id)).cloned())
             };
+            if profile.is_none() { store.database.ensure_registration_capacity()?; }
             let store = save_store(store, Some(attempt.clone())).await?;
             (store.database.host_id.clone(), profile)
         };
@@ -681,9 +708,9 @@ mod native {
                 let _operation = state.operation.lock().await;
                 attempt.check()?;
                 let mut store = open_store(app).await?;
-                if store.database.profiles.len() >= 64 { return Err("保存的 ChatGPT 连接过多，请先整理已有连接".into()); }
                 let existing = store.database.profiles.iter().find(|profile| profile.client_id == callback.client_id).cloned();
-                let profile = existing.unwrap_or_else(|| Profile { id: Uuid::new_v4().to_string(), label: format!("连接 {}", store.database.profiles.len() + 1),
+                if existing.is_none() { store.database.ensure_registration_capacity()?; }
+                let profile = existing.unwrap_or_else(|| Profile { id: Uuid::new_v4().to_string(), label: store.database.registration_label(),
                     client_id: callback.client_id.clone(), issuer: None, subject: None, email: None, tokens: None });
                 store.database.pending_profile = Some(profile.id.clone());
                 if !store.database.profiles.iter().any(|saved| saved.id == profile.id) { store.database.profiles.push(profile.clone()); }
@@ -802,12 +829,7 @@ mod native {
         native_credentials(store.database.active_profile().ok_or(RECONNECT)?)
     }
 
-    pub async fn disconnect(app: &AppHandle) -> Result<ConnectionStatus, String> {
-        cancel_sign_in(app);
-        let state = app.state::<AuthState>();
-        let _operation = state.operation.lock().await;
-        let mut store = open_store(app).await?;
-        let profile = match store.database.active_profile().cloned() { Some(profile) => profile, None => return Ok(connection(&store.database, None)) };
+    async fn revoke_profile(profile: &Profile) -> bool {
         let mut revoked = true;
         if let Some(refresh) = profile.tokens.as_ref().and_then(|tokens| tokens.refresh_token.as_ref()) {
             revoked = false;
@@ -828,16 +850,107 @@ mod native {
                 }
             }
         }
+        revoked
+    }
+    pub async fn disconnect(app: &AppHandle) -> Result<ConnectionStatus, String> {
+        cancel_sign_in(app);
+        let state = app.state::<AuthState>();
+        let _operation = state.operation.lock().await;
+        let mut store = open_store(app).await?;
+        let profile = match store.database.active_profile().cloned() { Some(profile) => profile, None => return Ok(connection(&store.database, None)) };
+        let revoked = revoke_profile(&profile).await;
         if let Some(saved) = store.database.profiles.iter_mut().find(|saved| saved.id == profile.id) { saved.tokens = None; }
         let store = save_store(store, None).await?;
         Ok(connection(&store.database, if revoked { None } else {
             Some("已清除本机登录，但未能确认远程撤销。请在 ChatGPT 设置中断开 FastLingo 的连接".into())
         }))
     }
+    pub async fn forget_profile(app: &AppHandle, profile_id: &str) -> Result<ConnectionStatus, String> {
+        // Cancellation shares the commit gate. A pending login cannot recreate
+        // this profile after its removal has been committed.
+        cancel_sign_in(app);
+        let state = app.state::<AuthState>();
+        let _operation = state.operation.lock().await;
+        let mut store = open_store(app).await?;
+        let profile = store.database.profiles.iter().find(|profile| profile.id == profile_id).cloned().ok_or("所选 ChatGPT 连接不存在")?;
+        let revoked = revoke_profile(&profile).await;
+        store.database.forget_profile(profile_id)?;
+        let store = save_store(store, None).await?;
+        Ok(connection(&store.database, Some(if revoked { "已忘记此 ChatGPT 连接。".into() }
+            else { "已移除本机连接，但未能确认远程撤销。请在 ChatGPT 用量设置中移除该连接的授权。".into() })))
+    }
 
     #[cfg(test)]
     mod tests {
         use super::*;
+        fn synthetic_profile(index: usize, connected: bool) -> Profile {
+            Profile { id:Uuid::new_v4().to_string(), label:format!("synthetic {index}"), client_id:format!("oaiapp_{index}"),
+                issuer:Some(ISSUER.into()), subject:Some(format!("subject-{index}")), email:None,
+                tokens:connected.then(|| TokenSet { access_token:"synthetic-access".into(), refresh_token:Some("synthetic-refresh".into()),
+                    id_token:"synthetic-id".into(), scopes:SCOPES.split_whitespace().map(str::to_owned).collect(), expires_at:now()+3600, earliest_refresh_at:None }) }
+        }
+        #[test]
+        fn account_and_profile_rows_are_an_owned_snapshot_of_one_database_state() {
+            let mut database = Database::default();
+            database.profiles = vec![synthetic_profile(1, true), synthetic_profile(2, false)];
+            database.active = Some(database.profiles[0].id.clone());
+            let initial = database_snapshot(&database);
+            database.active = Some(database.profiles[1].id.clone());
+            let switched = database_snapshot(&database);
+            assert_eq!(initial.account.client_id.as_deref(), Some("oaiapp_1"));
+            assert!(initial.account.connected && initial.profiles[0].active && !initial.profiles[1].active);
+            assert_eq!(switched.account.client_id.as_deref(), Some("oaiapp_2"));
+            assert!(!switched.account.connected && !switched.profiles[0].active && switched.profiles[1].active);
+            let public = serde_json::to_string(&initial.account).unwrap() + &serde_json::to_string(&initial.profiles).unwrap();
+            for secret in ["synthetic-access", "synthetic-refresh", "synthetic-id"] { assert!(!public.contains(secret)); }
+        }
+        #[test]
+        fn forgetting_active_pending_and_disconnected_profiles_preserves_host_and_other_accounts() {
+            for connected in [false, true] {
+                let mut database = Database::default();
+                let host = database.host_id.clone();
+                database.profiles = vec![synthetic_profile(1,connected), synthetic_profile(2,true)];
+                let removed = database.profiles[0].id.clone(); let retained = database.profiles[1].id.clone();
+                database.active = Some(removed.clone()); database.pending_profile = Some(removed.clone());
+                database.forget_profile(&removed).unwrap();
+                assert!(database.active.is_none()); assert!(database.pending_profile.is_none());
+                assert_eq!(database.host_id, host); assert_eq!(database.profiles[0].id, retained);
+                assert!(database.profiles[0].tokens.is_some()); assert!(database.validate().is_ok());
+                assert!(database.forget_profile(&removed).is_err());
+                assert_eq!(database.profiles.len(),1);
+            }
+        }
+        #[test]
+        fn forgetting_an_incomplete_registration_restores_capacity_without_switching_accounts() {
+            let mut database = Database::default();
+            database.profiles = (0..64).map(|index|synthetic_profile(index,index==0)).collect();
+            let active = database.profiles[0].id.clone(); database.active = Some(active.clone());
+            let pending = database.profiles[63].id.clone(); database.pending_profile = Some(pending.clone());
+            database.profiles[63].issuer = None; database.profiles[63].subject = None;
+            assert!(database.ensure_registration_capacity().is_err());
+            database.forget_profile(&pending).unwrap();
+            assert!(database.ensure_registration_capacity().is_ok());
+            assert_eq!(database.active.as_deref(),Some(active.as_str())); assert!(database.pending_profile.is_none());
+            database.profiles.push(synthetic_profile(64,false));
+            assert!(database.validate().is_ok()); assert!(database.ensure_registration_capacity().is_err());
+        }
+        #[test]
+        fn new_registration_labels_remain_distinct_after_forgetting_an_earlier_profile() {
+            let mut database = Database::default();
+            let mut first = synthetic_profile(1,false); first.label = "连接 1".into();
+            let mut third = synthetic_profile(3,false); third.label = "连接 3".into();
+            database.profiles = vec![first,third];
+            assert_eq!(database.registration_label(),"连接 4");
+        }
+        #[test]
+        fn cancelled_pending_attempt_cannot_reintroduce_a_forgotten_registration() {
+            let attempt = Attempt::new();
+            let mut database = Database::default(); database.profiles.push(synthetic_profile(1,false));
+            let id = database.profiles[0].id.clone(); database.pending_profile = Some(id.clone());
+            attempt.cancel(); database.forget_profile(&id).unwrap();
+            assert!(attempt.commit(|| { database.profiles.push(synthetic_profile(1,true)); Ok(()) }).is_err());
+            assert!(database.profiles.is_empty()); assert!(database.pending_profile.is_none());
+        }
         #[test]
         fn callback_rejects_wrong_state_duplicates_and_registration_swap() {
             assert!(parse_callback("/auth/callback?state=wrong&code=x&client_id=oaiapp_a", "expected", None).is_err());

@@ -1,6 +1,6 @@
 # ChatGPT 订阅翻译
 
-FastLingo 0.4.0 使用官方 Sign in with ChatGPT，让符合条件的账号授权 FastLingo 使用 ChatGPT 套餐或积分进行翻译。Windows [0.4.0 预发布下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.4.0) 提供安装包与便携包。真实浏览器授权、最终便携包 GPT-6 Luna 翻译、请求中取消与取消后恢复均已实测；旧版 0.3.1 使用方式见 [历史说明](codex.md)。
+FastLingo 自 0.4.0 起使用官方 Sign in with ChatGPT，让符合条件的账号授权 FastLingo 使用 ChatGPT 套餐或积分进行翻译。当前 0.5.0 新增可编辑翻译提示词与连接状态修复，下载以 [0.5.0 Release](https://github.com/hamelnn/FastDict/releases/tag/v0.5.0) 的实际附件为准。0.4.0 的真实浏览器授权、最终便携包 GPT-6 Luna 翻译、请求中取消与取消后恢复曾通过实测，不能替代 0.5.0 的设备验收；旧版 0.3.1 使用方式见 [历史说明](codex.md)。
 
 此入口支持 Windows 和 macOS 桌面版。无需安装 Codex，也无需提供 API Key。官方目前说明符合条件的 Plus / Pro 账号可使用此能力；具体模型、套餐、工作区和地区权限，以授权及实际请求结果为准。[官方接入概览](https://developers.openai.com/siwc/token-sharing-open-source)、[官方快速入门](https://developers.openai.com/siwc/quickstart)。
 

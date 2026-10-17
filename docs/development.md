@@ -26,8 +26,8 @@ npm run test:e2e
 原生检查和截图编码测试：
 
 ```sh
-cargo check --manifest-path src-tauri/Cargo.toml
-cargo test --manifest-path src-tauri/Cargo.toml --lib
+cargo check --locked --manifest-path src-tauri/Cargo.toml
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
 ```
 
 桌面打包分别使用 `npm run windows:build` 和 `npm run macos:build`；构建前置要求、输出与签名说明见 [Windows](windows.md) / [macOS](macos.md)。移动端使用 `android:init` / `android:build` 和 `ios:init` / `ios:build`，详见 [移动端说明](mobile.md)。
@@ -38,6 +38,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib
 | --- | --- |
 | `src/` | React 界面与共享状态 |
 | `src/lib/` | 翻译协议、OCR、存储及平台接口 |
+| `src/hooks/` | 流式结果刷新及模态框焦点生命周期 |
 | `src/components/` | 截图框选与独立界面组件 |
 | `src-tauri/src/` | 原生截图、快捷键、窗口、诊断与密钥存储 |
 | `src-tauri/plugins/fastdict-mobile/` | Kotlin / Swift 原生选图、分享及 Android 加密密钥存储 |

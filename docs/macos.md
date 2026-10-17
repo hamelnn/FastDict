@@ -1,8 +1,10 @@
 # macOS 版
 
-已实现菜单栏、Mac 快捷键、权限引导和 Keychain。0.3.0 源码名称为 FastLingo，关闭按钮默认退出，开机启动默认关闭；可在偏好设置调整。以下下载与包验证仍为原 FastDict 0.2.0。0.2.0 已通过 [macOS 通用包构建](https://github.com/hamelnn/FastDict/actions/runs/38749467816)，生成并校验 Apple Silicon / Intel 通用 `.app.zip` 和 `.dmg`；真机操作流程尚待验收。
+0.5.0 采用随系统变化的纯白 / 纯黑界面。提示词在设置首页编辑；录屏权限、OCR、桌面行为和快捷键移入“高级设置”。本次准备发布 Apple Silicon / Intel 通用 DMG 与应用 ZIP，见 [0.5.0 下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.5.0)，以实际附件与构建记录为准。真机操作流程仍待验收。
 
-下载见 [GitHub Release](https://github.com/hamelnn/FastDict/releases/tag/v0.2.0)。当前为 ad-hoc 签名的测试版，未进行 Apple 公证。
+已实现菜单栏、Mac 快捷键、权限引导和 Keychain。应用名称为 FastLingo，关闭按钮默认退出，开机启动默认关闭；可在高级设置调整。历史版本 0.2.0 曾通过 [macOS 通用包构建](https://github.com/hamelnn/FastDict/actions/runs/38749467816)，其包验证不代表 0.5.0 验收结果。
+
+当前构建使用 ad-hoc 签名，未进行 Apple 公证；具体签名与架构见所下载包的 manifest。
 
 ## 使用
 
@@ -38,7 +40,7 @@ npm run macos:build
 - `manifest-<target>.json`：实际架构、签名类型、文件大小与 SHA-256。
 - 使用说明及第三方声明。
 
-脚本在构建前检查 SDK 与 Rust target，导出前检查实际架构、签名和 DMG 完整性。Windows 主机不能构建 Mac 应用。仅构建一种架构时可运行：
+脚本在构建前检查 SDK 与 Rust target，导出前检查实际架构、签名和 DMG 完整性。构建使用 `--locked`，并读取 Cargo 的 `target_directory`，以同一绝对目录构建与导出；支持 `CARGO_TARGET_DIR` 和 Cargo 配置，不会从默认 target 目录兜底选取旧应用。Windows 主机不能构建 Mac 应用。仅构建一种架构时可运行：
 
 ```sh
 npm run macos:build -- --target=aarch64-apple-darwin

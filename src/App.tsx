@@ -5,7 +5,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  CircleHelp,
   Clipboard,
   Copy,
   Expand,
@@ -15,7 +14,6 @@ import {
   LoaderCircle,
   Menu,
   Minus,
-  Monitor,
   Plus,
   ScanLine,
   Settings2,
@@ -23,7 +21,6 @@ import {
   ShieldCheck,
   Sparkles,
   X,
-  Zap,
 } from 'lucide-react';
 import type { HistoryItem, Preferences, Provider, Screenshot } from './types';
 import { isKeylessProvider, translate } from './lib/translation';
@@ -38,7 +35,6 @@ import {
   isNative,
   isNativeMac,
   listenInputs,
-  operatingSystem,
   pickMobileImage,
   readClipboard,
   shortcutLabels,
@@ -49,16 +45,16 @@ import {
 import {
   addHistory,
   clearHistory,
-  deleteApiKey,
-  getApiKey,
+  getProviderApiKey,
   getStorageWarnings,
   loadHistory,
   loadPreferences,
   loadProviders,
-  saveApiKey,
+  removeProviderConfiguration,
   savePreferences,
-  saveProviders,
+  saveProviderConfiguration,
 } from './lib/storage';
+import { createId } from './lib/id';
 import { ImageCropper } from './components/CaptureOverlay';
 import { quitApplication, reportBootStage } from './BootErrorBoundary';
 import { useMacScreenPermission } from './components/MacScreenPermission';
@@ -67,11 +63,12 @@ import { HistoryView } from './components/HistoryView';
 import { PreferencesView } from './components/PreferencesView';
 import { ProviderEditor, ProviderPresets } from './components/ProviderDialogs';
 import { MobileNavigation } from './components/MobileNavigation';
+import { useStreamingOutput } from './hooks/useStreamingOutput';
 
 type Phase = 'idle' | 'capturing' | 'ocr' | 'translating' | 'error';
 type View = 'translate' | 'history' | 'settings';
+type ProviderDialog = { kind: 'presets' } | { kind: 'editor'; provider: Provider } | null;
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
-const SAMPLE = 'The real voyage of discovery consists not in seeking new landscapes, but in having new eyes.';
 
 export default function App() {
   const macPermission = useMacScreenPermission();
@@ -81,7 +78,7 @@ export default function App() {
   const [storageWarning, setStorageWarning] = useState(() => getStorageWarnings().join(' '));
   const [view, setView] = useState<View>('translate');
   const [text, setText] = useState('');
-  const [output, setOutput] = useState('');
+  const { output, setOutput, appendOutput, flushOutput } = useStreamingOutput();
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
@@ -93,8 +90,21 @@ export default function App() {
   const [duration, setDuration] = useState<number | null>(null);
   const [firstToken, setFirstToken] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [editing, setEditing] = useState<Provider | null>(null);
-  const [showPresets, setShowPresets] = useState(false);
+  const [providerDialog, setProviderDialog] = useState<ProviderDialog>(null);
+  const editing = providerDialog?.kind === 'editor' ? providerDialog.provider : null;
+  const showPresets = providerDialog?.kind === 'presets';
+  const providerDialogRef = useRef(providerDialog);
+  providerDialogRef.current = providerDialog;
+  const setEditing = useCallback((provider: Provider | null) => {
+    const dialog: ProviderDialog = provider ? { kind: 'editor', provider } : null;
+    providerDialogRef.current = dialog;
+    setProviderDialog(dialog);
+  }, []);
+  const setShowPresets = useCallback((show: boolean) => {
+    const dialog: ProviderDialog = show ? { kind: 'presets' } : null;
+    providerDialogRef.current = dialog;
+    setProviderDialog(dialog);
+  }, []);
   const [codexChecks, setCodexChecks] = useState<Record<string, { model: string; detected: boolean }>>({});
   const [windowMode, setWindowMode] = useState<'sidebar' | 'expanded'>('expanded');
   const [ocrReady, setOcrReady] = useState(false);
@@ -103,10 +113,13 @@ export default function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const jobRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const warmupRef = useRef<AbortController | null>(null);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
   const savedPreferencesRef = useRef(preferences);
-  const savedProvidersRef = useRef(providers);
+  const preferencesRef = useRef(preferences);
+  preferencesRef.current = preferences;
+  const configurationBusyRef = useRef(false);
   const providersRef = useRef(providers);
   providersRef.current = providers;
   const active = providers.find((p) => p.id === preferences.activeProviderId) || providers[0];
@@ -166,26 +179,19 @@ export default function App() {
     }
   }, [preferences]);
   useEffect(() => {
-    if (savedProvidersRef.current === providers) return;
-    try {
-      saveProviders(providers);
-      savedProvidersRef.current = providers;
-    } catch {
-      setStorageWarning('API 配置暂时无法保存，当前界面仍可使用。原有配置与密钥未被清除。');
-      reportBootStage('storage-write-failed');
-    }
-  }, [providers]);
-  useEffect(() => {
     if (!isNative || MOBILE) return;
     let disposed = false;
+    const controller = new AbortController();
+    warmupRef.current = controller;
     setOcrReady(false);
     const timer = window.setTimeout(() => {
       if (phaseRef.current !== 'idle') return;
-      void warmOcr(preferences.ocrLang)
+      void warmOcr(preferences.ocrLang, controller.signal)
         .then(() => {
           if (!disposed) setOcrReady(true);
         })
-        .catch(() => {
+        .catch((cause) => {
+          if (cause instanceof DOMException && cause.name === 'AbortError') return;
           if (!disposed) {
             setOcrReady(false);
             setError('本地识别引擎预热失败，截图时会重新尝试加载。');
@@ -194,6 +200,7 @@ export default function App() {
     }, 300);
     return () => {
       disposed = true;
+      controller.abort();
       window.clearTimeout(timer);
     };
   }, [preferences.ocrLang]);
@@ -201,7 +208,7 @@ export default function App() {
     if (!isNative) return;
     let disposed = false;
     void Promise.all(
-      providers.map(async (provider) => ({ id: provider.id, hasKey: provider.kind === 'codex' ? false : Boolean(await getApiKey(provider.id)) })),
+      providers.map(async (provider) => ({ id: provider.id, hasKey: Boolean(await getProviderApiKey(provider)) })),
     )
       .then((keys) => {
         if (disposed || providersRef.current !== providers) return;
@@ -211,7 +218,6 @@ export default function App() {
         });
         if (refreshed.every((provider, index) => provider === providers[index])) return;
         // Vault hydration changes a connection indicator, not the saved configuration.
-        savedProvidersRef.current = refreshed;
         setProviders((current) => (current === providers ? refreshed : current));
       })
       .catch(() => {
@@ -224,13 +230,15 @@ export default function App() {
   const stop = useCallback(() => {
     ++jobRef.current;
     abortRef.current?.abort();
+    flushOutput();
     setPhase('idle');
     setError('');
-  }, []);
+  }, [flushOutput]);
   useEffect(() => {
     if (!MOBILE) return;
     let paused = false;
     const onVisibility = () => {
+      if (document.hidden) warmupRef.current?.abort();
       if (document.hidden && ['ocr', 'translating'].includes(phaseRef.current)) {
         stop();
         paused = true;
@@ -243,8 +251,16 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [stop, notify]);
   const updatePreferences = (patch: Partial<Preferences>) => {
-    if (patch.sourceLang || patch.targetLang || 'activeProviderId' in patch || patch.ocrLang) stop();
-    setPreferences((p) => ({ ...p, ...patch }));
+    if (patch.sourceLang || patch.targetLang || 'activeProviderId' in patch || patch.ocrLang || 'translationPrompt' in patch) stop();
+    // Async input handlers must check permission at send time, even before React renders.
+    const next = { ...preferencesRef.current, ...patch };
+    if ('translationPrompt' in patch) {
+      // Prompt editor confirms a save only after persistence succeeds.
+      savePreferences(next);
+      savedPreferencesRef.current = next;
+    }
+    preferencesRef.current = next;
+    setPreferences(next);
   };
 
   const runTranslation = useCallback(
@@ -267,16 +283,16 @@ export default function App() {
       let tokenSeen = false;
       try {
         if (!active) {
-          setShowPresets(true);
+          if (!providerDialogRef.current) setShowPresets(true);
           throw new Error('请先添加并配置翻译服务。');
         }
         if (active.kind === 'codex' && (!isNative || MOBILE)) {
           throw new Error('ChatGPT 订阅翻译目前仅支持 Windows 和 macOS 桌面版。');
         }
-        const apiKey = active.kind === 'codex' ? '' : await getApiKey(active.id);
+        const apiKey = active.kind === 'codex' ? '' : await getProviderApiKey(active);
         if (job !== jobRef.current) return;
         if (active.kind !== 'codex' && !apiKey && !isKeylessProvider(active)) {
-          setEditing(active);
+          if (!providerDialogRef.current) setEditing(active);
           throw new Error('请为当前服务填写 API Key，然后开始翻译。');
         }
         setPhase('translating');
@@ -286,6 +302,7 @@ export default function App() {
           text: source,
           sourceLang: preferences.sourceLang,
           targetLang: preferences.targetLang,
+          promptTemplate: preferences.translationPrompt,
           signal: controller.signal,
           onDelta: (delta) => {
             if (job !== jobRef.current) return;
@@ -293,7 +310,7 @@ export default function App() {
               tokenSeen = true;
               setFirstToken(performance.now() - started);
             }
-            setOutput((current) => current + delta);
+            appendOutput(delta);
           },
         });
         if (job !== jobRef.current) return;
@@ -308,7 +325,7 @@ export default function App() {
         try {
           setHistory(
             addHistory({
-              id: crypto.randomUUID(),
+              id: createId(),
               source,
               translation: result,
               sourceLang: preferences.sourceLang,
@@ -325,16 +342,17 @@ export default function App() {
         }
       } catch (e) {
         if (job !== jobRef.current || controller.signal.aborted) return;
+        flushOutput();
         const message = errorMessage(e);
         setError(message);
         if (active?.kind === 'codex' && /登录|重新授权|未授权|未提供此模型/.test(message)) {
           setCodexChecks(current => ({ ...current, [active.id]: { model: active.model, detected: false } }));
-          setEditing(active);
+          if (!providerDialogRef.current) setEditing(active);
         }
         setPhase('error');
       }
     },
-    [active, preferences.sourceLang, preferences.targetLang],
+    [active, preferences.sourceLang, preferences.targetLang, preferences.translationPrompt, setOutput, appendOutput, flushOutput, setEditing, setShowPresets],
   );
 
   const handleImage = useCallback(
@@ -381,14 +399,14 @@ export default function App() {
         setOcrReady(true);
         setPhase('idle');
         // A screenshot shortcut explicitly requests immediate translation.
-        if (captureInput || preferences.autoTranslate) await runTranslation(result.text.trim(), 'image');
+        if (captureInput || preferencesRef.current.autoTranslate) await runTranslation(result.text.trim(), 'image');
       } catch (e) {
         if (job !== jobRef.current || controller.signal.aborted) return;
         setError(errorMessage(e));
         setPhase('error');
       }
     },
-    [preferences.ocrLang, preferences.autoTranslate, runTranslation],
+    [preferences.ocrLang, runTranslation],
   );
 
   const handleClipboard = useCallback(
@@ -404,16 +422,17 @@ export default function App() {
         setOcrConfidence(null);
         setOutput('');
         setDuration(null);
+        setFirstToken(null);
         setView('translate');
         setMenuOpen(false);
-        if (preferences.autoTranslate) await runTranslation(content, 'clipboard');
+        if (preferencesRef.current.autoTranslate) await runTranslation(content, 'clipboard');
       } catch (e) {
         if (job !== jobRef.current) return;
         setError(errorMessage(e));
         setPhase('error');
       }
     },
-    [stop, preferences.autoTranslate, runTranslation],
+    [stop, runTranslation],
   );
 
   const inputHandlersRef = useRef({ handleClipboard, handleImage });
@@ -440,6 +459,7 @@ export default function App() {
       onError: (message) => {
         ++jobRef.current;
         abortRef.current?.abort();
+        flushOutput();
         setError(message);
         setPhase('error');
         if (isNativeMac)
@@ -480,6 +500,7 @@ export default function App() {
   useEffect(
     () => () => {
       abortRef.current?.abort();
+      warmupRef.current?.abort();
       ++jobRef.current;
     },
     [],
@@ -540,11 +561,13 @@ export default function App() {
   const capturePreview = useCallback(async () => {
     stop();
     const job = jobRef.current;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setError('');
     setMenuOpen(false);
     setPhase('capturing');
     try {
-      const screenshot = await captureDisplay();
+      const screenshot = await captureDisplay(controller.signal);
       if (job !== jobRef.current) return;
       setCrop(screenshot);
       setPhase('idle');
@@ -560,10 +583,12 @@ export default function App() {
   }, [stop]);
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.repeat || editing || showPresets || crop) return;
+      if (view !== 'translate') return;
       const modifier = event.ctrlKey || event.metaKey;
       if (modifier && event.key === 'Enter') {
         event.preventDefault();
-        void runTranslation(text);
+        if (!busy) void runTranslation(text);
       }
       if (!isNative && modifier && event.shiftKey && event.code === 'KeyS') {
         event.preventDefault();
@@ -577,7 +602,7 @@ export default function App() {
     };
     window.addEventListener('keydown', keyboard);
     return () => window.removeEventListener('keydown', keyboard);
-  }, [runTranslation, text, capture, handleClipboard, busy, stop]);
+  }, [runTranslation, text, capture, handleClipboard, busy, stop, view, editing, showPresets, crop]);
 
   const importFile = async (file?: File) => {
     if (!file) return;
@@ -608,40 +633,50 @@ export default function App() {
   };
   const saveProvider = async (provider: Provider, key: string, removeKey: boolean) => {
     if (provider.kind === 'codex' && (!isNative || MOBILE)) throw new Error('ChatGPT 订阅翻译目前仅支持 Windows 和 macOS 桌面版。');
-    if (provider.kind !== 'codex') {
-      if (removeKey) await deleteApiKey(provider.id);
-      else if (key.trim()) await saveApiKey(provider.id, key.trim());
+    if (configurationBusyRef.current) throw new Error('配置正在保存，请稍后重试。');
+    configurationBusyRef.current = true;
+    stop();
+    try {
+      const committed = await saveProviderConfiguration(() => ({ providers: providersRef.current, preferences: preferencesRef.current }), provider, key, removeKey);
+      // Global inputs can start another job while the vault write is pending.
+      stop();
+      providersRef.current = committed.providers;
+      preferencesRef.current = committed.preferences;
+      savedPreferencesRef.current = committed.preferences;
+      setProviders(committed.providers);
+      setPreferences(committed.preferences);
+      setEditing(null);
+      setShowPresets(false);
+      notify(provider.kind === 'codex' ? 'ChatGPT 配置已保存' : 'API 配置已保存');
+      void committed.cleanup().catch(() => setStorageWarning('配置已保存，但旧密钥暂时无法清理。当前服务使用新配置，请检查系统保险库权限。'));
+    } finally {
+      configurationBusyRef.current = false;
     }
-    const saved = provider.kind === 'codex'
-      ? { ...provider, baseUrl: '', hasKey: false }
-      : { ...provider, hasKey: removeKey ? false : Boolean(key.trim() || provider.hasKey) };
-    setProviders((current) =>
-      current.some((p) => p.id === saved.id)
-        ? current.map((p) => (p.id === saved.id ? saved : p))
-        : [...current, saved],
-    );
-    updatePreferences({ activeProviderId: saved.id });
-    setEditing(null);
-    setShowPresets(false);
-    notify(provider.kind === 'codex' ? 'ChatGPT 配置已保存' : 'API 配置已保存');
   };
   const removeProvider = async (provider: Provider) => {
+    if (configurationBusyRef.current) { notify('配置正在保存，请稍后重试。'); return; }
+    configurationBusyRef.current = true;
+    stop();
     try {
-      if (provider.kind !== 'codex') await deleteApiKey(provider.id);
-      const remaining = providers.filter((p) => p.id !== provider.id);
-      setProviders(remaining);
-      if (active?.id === provider.id || !remaining.length) {
-        updatePreferences({ activeProviderId: remaining[0]?.id || '' });
-      }
+      const committed = await removeProviderConfiguration(() => ({ providers: providersRef.current, preferences: preferencesRef.current }), provider);
+      stop();
+      providersRef.current = committed.providers;
+      preferencesRef.current = committed.preferences;
+      savedPreferencesRef.current = committed.preferences;
+      setProviders(committed.providers);
+      setPreferences(committed.preferences);
       setEditing(null);
       notify(provider.kind === 'codex' ? 'ChatGPT 配置已移除' : 'API 配置已移除');
+      void committed.cleanup().catch(() => setStorageWarning('服务已移除，但旧密钥暂时无法清理。请检查系统保险库权限。'));
     } catch (e) {
       notify(errorMessage(e));
+    } finally {
+      configurationBusyRef.current = false;
     }
   };
   const copyOutput = async () => {
     try {
-      await writeClipboard(output);
+      await writeClipboard(flushOutput());
       notify('译文已复制');
     } catch (e) {
       notify(errorMessage(e));
@@ -661,11 +696,10 @@ export default function App() {
     } });
   };
   const codexDetected = (provider: Provider) => isNative && !MOBILE && codexChecks[provider.id]?.model === provider.model && codexChecks[provider.id]?.detected;
-  const readyCount = providers.filter(provider => provider.kind !== 'codex' && (provider.hasKey || isKeylessProvider(provider))).length;
-  const connectionDetected = active?.kind === 'codex' ? codexDetected(active) : readyCount > 0;
+  const connectionDetected = Boolean(active && (active.kind === 'codex' ? codexDetected(active) : active.hasKey || isKeylessProvider(active)));
   const connectionLabel = active?.kind === 'codex'
     ? !isNative || MOBILE ? 'ChatGPT 仅限桌面' : codexDetected(active) ? 'ChatGPT 已连接' : 'ChatGPT 待连接'
-    : readyCount ? (MOBILE ? '已就绪' : '随时就绪') : (MOBILE ? '待配置 API' : '等待连接服务');
+    : connectionDetected ? (MOBILE ? '已就绪' : '随时就绪') : (MOBILE ? '待配置 API' : '等待连接服务');
 
   return (
     <div
@@ -675,6 +709,7 @@ export default function App() {
       }}
       onDrop={(event) => {
         event.preventDefault();
+        if (editing || showPresets || crop || view !== 'translate') return;
         void importFile(event.dataTransfer.files[0]);
       }}
     >
@@ -695,17 +730,15 @@ export default function App() {
             <strong>
               FastLingo
             </strong>
-            <small>{isNativeMac ? 'FOR MAC' : 'CAPTURE · TRANSLATE'}</small>
           </span>
         </a>
-        <div className="sidebar-caption">工作空间</div>
-        <nav className="navigation">
-          <button className={view === 'translate' ? 'selected' : ''} onClick={() => chooseView('translate')}>
+        <nav className="navigation" aria-label="主导航">
+          <button className={view === 'translate' ? 'selected' : ''} aria-current={view === 'translate' ? 'page' : undefined} onClick={() => chooseView('translate')}>
             <Languages size={18} />
             <span>即时翻译</span>
             <ChevronRight size={15} />
           </button>
-          <button className={view === 'history' ? 'selected' : ''} onClick={() => chooseView('history')}>
+          <button className={view === 'history' ? 'selected' : ''} aria-current={view === 'history' ? 'page' : undefined} onClick={() => chooseView('history')}>
             <History size={18} />
             <span>翻译记录</span>
             {history.length > 0 && <span className="count">{history.length}</span>}
@@ -726,7 +759,7 @@ export default function App() {
           </button>
         </div>
         <div className="provider-list">
-          {!providers.length && <p className="provider-empty">尚未添加翻译服务<br /><span>点击上方 + 选择翻译服务</span></p>}
+          {!providers.length && <p className="provider-empty">尚未添加服务</p>}
           {providers.map((provider, index) => (
             <button
               key={provider.id}
@@ -743,7 +776,7 @@ export default function App() {
               {active?.id === provider.id ? (
                 <Check className="provider-check" size={15} />
               ) : (
-                <span className={`connection-dot ${(provider.kind === 'codex' ? codexDetected(provider) : provider.hasKey) ? 'connected' : ''}`} />
+                <span className={`connection-dot ${(provider.kind === 'codex' ? codexDetected(provider) : provider.hasKey || isKeylessProvider(provider)) ? 'connected' : ''}`} />
               )}
               <span className="sr-only">服务 {index + 1}</span>
             </button>
@@ -752,6 +785,7 @@ export default function App() {
         <div className="sidebar-bottom">
           <button
             className={`settings-nav ${view === 'settings' ? 'selected' : ''}`}
+            aria-current={view === 'settings' ? 'page' : undefined}
             onClick={() => chooseView('settings')}
           >
             <Settings2 size={18} />
@@ -778,7 +812,7 @@ export default function App() {
               chooseView('translate');
             }}>
               <span className="brand-mark"><Languages size={22} strokeWidth={1.8} /></span>
-              <span><strong>FastLingo</strong><small>{operatingSystem === 'ios' ? 'iOS' : 'ANDROID'}</small></span>
+              <span><strong>FastLingo</strong></span>
             </a>
             <span className="availability"><span className={connectionDetected ? 'status-dot' : 'status-dot unconfigured'} />{connectionLabel}</span>
           </header>
@@ -791,8 +825,6 @@ export default function App() {
             >
               <Menu size={20} />
             </button>
-            <span>工作空间</span>
-            <ChevronRight size={13} />
             <strong data-tauri-drag-region>
               {view === 'translate' ? '即时翻译' : view === 'history' ? '翻译记录' : '偏好设置'}
             </strong>
@@ -814,19 +846,6 @@ export default function App() {
                 <Expand size={16} />
               </button>
             )}
-            <button
-              className="icon-button"
-              title="查看使用指南"
-              aria-label="使用指南"
-              onClick={() => {
-                chooseView('settings');
-                requestAnimationFrame(() => {
-                  document.getElementById('quickstart')?.scrollIntoView({ behavior: 'smooth' });
-                });
-              }}
-            >
-              <CircleHelp size={18} />
-            </button>
             {isNative && !MOBILE && (
               <button
                 className="icon-button"
@@ -857,10 +876,7 @@ export default function App() {
             )}
           {!isNative && !MOBILE && (
             <div className="preview-notice">
-              <Monitor size={16} />
-              <span>
-                <strong>当前是网页预览</strong>桌面快捷键与直接框选请打开 FastLingo 桌面应用。
-              </span>
+              <span>网页预览</span>
               <button
                 className="text-button"
                 onClick={() => {
@@ -875,18 +891,11 @@ export default function App() {
           )}
           {view === 'translate' && (
             <>
-              <div className="intro">
-                <div>
-                  <h1>{MOBILE ? '看懂眼前的文字' : '即时翻译'}</h1>
-                  <p>{MOBILE ? '选一张截图，或粘贴一段文字。' : '截图、粘贴或导入图片，译文即时呈现。'}</p>
-                </div>
-              </div>
+              <h1 className="sr-only">即时翻译</h1>
               {!providers.length && (
                 <section className="provider-onboarding" aria-label="添加翻译服务引导">
-                  <span className="onboarding-icon"><Sparkles size={22} strokeWidth={1.6} /></span>
                   <div>
-                    <h2>添加你的第一个翻译服务</h2>
-                    <p>{isNative && !MOBILE ? '选择 API 服务并填写自己的地址、模型和密钥，或登录 ChatGPT，授权使用订阅翻译。' : '选择服务模板或自定义接口，填写自己的 API 地址、模型和密钥，再开始截图翻译。'}</p>
+                    <h2>配置翻译服务后开始</h2>
                   </div>
                   <button className="button primary" onClick={() => setShowPresets(true)}><Plus size={16} />添加翻译服务</button>
                 </section>
@@ -919,21 +928,11 @@ export default function App() {
                     <span>导入图片</span>
                   </button>}
                 </div>
-                <span className="capture-hint">
-                  <Zap size={13} />
-                  {isNative && !MOBILE
-                    ? ocrReady
-                      ? '本机识别已就绪 · 松开即翻译'
-                      : '框选后立即翻译'
-                    : preferences.autoTranslate
-                      ? '导入后自动翻译'
-                      : '导入后手动翻译'}
-                </span>
+                {isNative && !MOBILE && <span className="capture-hint" title={ocrReady ? '本机识别已就绪' : '框选后立即翻译'} aria-label={ocrReady ? '本机识别已就绪' : '框选后立即翻译'}><span className={ocrReady ? 'status-dot' : 'status-dot unconfigured'} /></span>}
               </div>
               <div className="translator">
                 <div className="language-bar">
                   <div className="language-select">
-                    <span className="language-caption">从</span>
                     <select
                       aria-label="源语言"
                       value={preferences.sourceLang}
@@ -956,21 +955,23 @@ export default function App() {
                         notify('请先选择源语言再交换');
                         return;
                       }
+                      const currentOutput = flushOutput();
                       stop();
                       updatePreferences({
                         sourceLang: preferences.targetLang,
                         targetLang: preferences.sourceLang,
                       });
-                      if (output) {
-                        setText(output);
+                      if (currentOutput) {
+                        setText(currentOutput);
                         setOutput('');
+                        setDuration(null);
+                        setFirstToken(null);
                       }
                     }}
                   >
                     <ArrowLeftRight size={17} />
                   </button>
                   <div className="language-select target-language">
-                    <span className="language-caption">到</span>
                     <select
                       aria-label="目标语言"
                       value={preferences.targetLang}
@@ -984,9 +985,6 @@ export default function App() {
                     </select>
                     <ChevronDown size={14} />
                   </div>
-                  <span className="model-label">
-                    <span /> {active?.model || '未选择服务'}
-                  </span>
                 </div>
                 <div className="translation-panels">
                   <section className="source-panel">
@@ -1010,6 +1008,7 @@ export default function App() {
                               setOutput('');
                               setImage(null);
                               setDuration(null);
+                              setFirstToken(null);
                               setOcrConfidence(null);
                             }}
                           >
@@ -1044,7 +1043,7 @@ export default function App() {
                     <textarea
                       ref={sourceRef}
                       aria-label="待翻译文本"
-                      placeholder={MOBILE ? '输入文字，或从其他应用复制后粘贴…' : '粘贴、输入，或截取屏幕上的一段文字…'}
+                      placeholder="输入或粘贴原文"
                       value={text}
                       spellCheck={false}
                       disabled={phase === 'ocr'}
@@ -1053,6 +1052,7 @@ export default function App() {
                         setText(event.target.value);
                         setOutput('');
                         setDuration(null);
+                        setFirstToken(null);
                         setError('');
                       }}
                       onPaste={(event) => {
@@ -1067,32 +1067,18 @@ export default function App() {
                     />
                     <div className="source-footer">
                       <span>{text.length.toLocaleString()} 字符</span>
-                      {!text && !image && (
-                        <button
-                          className="text-button example-button"
-                          onClick={() => {
-                            setText(SAMPLE);
-                            sourceRef.current?.focus();
-                          }}
-                        >
-                          试试一段英文
-                          <ArrowUpRight size={13} />
-                        </button>
-                      )}
                     </div>
                   </section>
                   <section className="result-panel" aria-label="翻译结果">
                     <div className="panel-label">
-                      <span>
-                        译文 <span className="ai-badge">AI</span>
-                      </span>
+                      <span>译文</span>
                       <div>
                       {MOBILE && isNative && <button
                         className="icon-button"
                         disabled={!output}
                         aria-label="分享译文"
                         title="分享译文"
-                        onClick={() => { void shareText(output).catch((cause) => notify(errorMessage(cause))); }}
+                        onClick={() => { void shareText(flushOutput()).catch((cause) => notify(errorMessage(cause))); }}
                       ><Share2 size={18} /></button>}
                       <button
                         className="icon-button"
@@ -1117,33 +1103,20 @@ export default function App() {
                       </div>
                     ) : (
                       <div className={`empty-result ${busy ? 'working' : ''}`}>
-                        <div className="empty-glyph">
-                          {busy ? (
-                            <LoaderCircle size={28} className="spin" />
-                          ) : (
-                            <Languages size={31} strokeWidth={1.25} />
-                          )}
-                        </div>
-                        <strong>
+                        {busy && <LoaderCircle size={20} className="spin" aria-hidden="true" />}
+                        <span className="empty-status">
                           {phase === 'ocr'
-                            ? '正在读懂图片中的文字'
+                            ? ocrMessage
                             : phase === 'translating'
-                              ? '正在等待第一段译文'
+                              ? '等待译文'
                               : phase === 'capturing'
                                 ? MOBILE
                                   ? '请选择一张截图'
                                   : isNative
                                   ? '正在准备桌面框选'
                                   : '请选择浏览器分享内容'
-                                : '译文将在这里出现'}
-                        </strong>
-                        <p>
-                          {phase === 'ocr'
-                            ? ocrMessage
-                            : phase === 'translating'
-                              ? '译文会随生成进度逐字呈现'
-                              : MOBILE ? '选取截图，或在上方输入原文' : '截取屏幕文字，或在左侧输入原文'}
-                        </p>
+                                : ''}
+                        </span>
                         {phase === 'ocr' && (
                           <div className="progress-track">
                             <span style={{ width: `${Math.round(ocrProgress * 100)}%` }} />
@@ -1197,7 +1170,6 @@ export default function App() {
                     <ChevronDown size={12} />
                   </div>
                   {active?.kind === 'codex' && isNative && !MOBILE && <div className="chatgpt-plan-label" aria-label="ChatGPT 订阅用量">
-                    <span>{codexDetected(active) || phase === 'translating' ? '使用 ChatGPT 套餐' : 'ChatGPT 订阅翻译'}</span>
                     <button className="text-button" type="button" onClick={() => { void manageChatGPTUsage(); }}>管理用量</button>
                   </div>}
                   <div className="translate-actions">
@@ -1239,16 +1211,6 @@ export default function App() {
                   </button>
                 </div>
               )}
-              <div className="under-card">
-                <span>
-                  <ShieldCheck size={14} />
-                  OCR 本机处理，文本发送至你选择的翻译服务
-                </span>
-                <button className="text-button" onClick={() => chooseView('settings')}>
-                  调整识别语言
-                  <ChevronRight size={13} />
-                </button>
-              </div>
             </>
           )}
           {view === 'history' && (
@@ -1271,6 +1233,7 @@ export default function App() {
                 setImage(null);
                 setOcrConfidence(null);
                 setDuration(item.durationMs);
+                setFirstToken(null);
                 updatePreferences({ sourceLang: item.sourceLang, targetLang: item.targetLang });
                 chooseView('translate');
               }}
@@ -1294,10 +1257,13 @@ export default function App() {
                 void capture();
               }}
               onWarmOcr={() => {
+                warmupRef.current?.abort();
+                const controller = new AbortController();
+                warmupRef.current = controller;
                 notify('正在预热 OCR…');
-                void warmOcr(preferences.ocrLang)
-                  .then(() => notify('识别引擎已就绪'))
-                  .catch((error) => notify(errorMessage(error)));
+                void warmOcr(preferencesRef.current.ocrLang, controller.signal)
+                  .then(() => { if (!controller.signal.aborted) notify('识别引擎已就绪'); })
+                  .catch((error) => { if (!controller.signal.aborted && !(error instanceof DOMException && error.name === 'AbortError')) notify(errorMessage(error)); });
               }}
               onQuit={() => {
                 void quitApplication().catch(() => notify('退出请求未完成，请使用窗口关闭按钮。'));
@@ -1334,6 +1300,7 @@ export default function App() {
       )}
       {editing && (
         <ProviderEditor
+          key={editing.id}
           provider={editing}
           existing={providers.some((p) => p.id === editing.id)}
           onClose={() => setEditing(null)}

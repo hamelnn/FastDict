@@ -27,7 +27,7 @@ export function HistoryView({ items, onClear, onOpen, onCopy, onStart }: Props) 
       <div className="page-heading">
         <div>
           <h1>翻译记录</h1>
-          <p>最近 100 条翻译，仅保存在这台设备。</p>
+          <p>{items.length} 条 · 保存在本机</p>
         </div>
         {items.length > 0 && (
           <button className="button secondary" onClick={clear}>
@@ -83,7 +83,6 @@ export function HistoryView({ items, onClear, onOpen, onCopy, onStart }: Props) 
         <div className="page-empty">
           <History size={36} strokeWidth={1.2} />
           <h2>暂无翻译记录</h2>
-          <p>完成一次翻译后，原文和译文会出现在这里。</p>
           <button className="button primary" onClick={onStart}>
             开始翻译
             <ArrowUpRight size={16} />

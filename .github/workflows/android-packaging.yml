@@ -1,8 +1,20 @@
 name: Build Android test APK
 
-# Manual only. Debug signing is for testing, not Play Store distribution.
+# Compile relevant source changes. Debug signing is for testing only.
 on:
   workflow_dispatch:
+  push:
+    paths: &mobile-paths
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'scripts/**'
+      - 'package*.json'
+      - 'index.html'
+      - 'tsconfig*.json'
+      - 'vite.config.*'
+      - '.github/workflows/android-packaging.yml'
+  pull_request:
+    paths: *mobile-paths
 
 permissions:
   contents: read
@@ -19,23 +31,24 @@ jobs:
     env:
       CI: 'true'
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22'
           cache: npm
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: '21'
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           targets: aarch64-linux-android
-      - uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: './src-tauri -> target'
       - name: Set up Android command-line tools
-        uses: android-actions/setup-android@v4
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
         with:
           # This applies only to the disposable CI runner, never a user's SDK.
           accept-android-sdk-licenses: true
@@ -52,7 +65,8 @@ jobs:
       - name: Build and verify test APK
         run: npm run android:build
       - name: Upload test package and verification manifest
-        uses: actions/upload-artifact@v7
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: FastLingo-Android-arm64-debug-${{ github.run_number }}
           path: |

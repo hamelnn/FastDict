@@ -12,6 +12,8 @@ interface ChatGPTFixture {
   holdSignIn: boolean;
   finishSignIn: () => void;
   signInError: string;
+  signInCancelled: boolean;
+  commitSignInBeforeReturn: boolean;
   selectError: string;
   disconnectMessage: string;
   holdTranslation: boolean;
@@ -35,7 +37,7 @@ async function installFixture(page: Page, options: { surface?: 'desktop' | 'brow
     const connected: ChatGPTStatus = { available: true, connected: true, planEnabled: true, accountLabel: 'Test account', modelAvailable: true, models: [{ slug: 'gpt-6-luna', displayName: 'GPT-6 Luna' }], profiles: [{ id: 'registration-a', label: 'Test account · A', active: true, connected: true, planEnabled: true }, { id: 'registration-b', label: 'Test account · B', active: false, connected: true, planEnabled: true }] };
     const state: ChatGPTFixture = {
       calls: [], status: seeded ? { ...connected } : { available: true, connected: false, planEnabled: false, modelAvailable: false }, signInStatus: connected,
-      holdCheck: false, releaseCheck: () => undefined, checkError: '', holdSignIn: false, finishSignIn: () => undefined, signInError: '', selectError: '', disconnectMessage: '已断开 ChatGPT 连接。', holdTranslation: false, finishTranslation: () => undefined,
+      holdCheck: false, releaseCheck: () => undefined, checkError: '', holdSignIn: false, finishSignIn: () => undefined, signInError: '', signInCancelled:false, commitSignInBeforeReturn:false, selectError: '', disconnectMessage: '已断开 ChatGPT 连接。', holdTranslation: false, finishTranslation: () => undefined,
     };
     Object.assign(window, { codexTest: state });
     if (surface === 'browser') return;
@@ -60,12 +62,25 @@ async function installFixture(page: Page, options: { surface?: 'desktop' | 'brow
           }
           if (command === 'sign_in_chatgpt') {
             const snapshot = { ...state.signInStatus };
+            state.signInCancelled = false;
+            if (state.commitSignInBeforeReturn) state.status = snapshot;
             if (state.holdSignIn) await new Promise<void>(resolve => { state.finishSignIn = resolve; });
+            if (state.signInCancelled) throw new Error('已取消 ChatGPT 登录');
             if (state.signInError) throw new Error(state.signInError);
             state.status = snapshot;
-            return snapshot;
+            return { ...snapshot, modelAvailable:false, models:[], message:snapshot.connected && snapshot.planEnabled ? '已连接 ChatGPT 并授权使用订阅，请刷新以获取可用模型。' : snapshot.message };
           }
-          if (command === 'cancel_chatgpt_sign_in' || command === 'open_chatgpt_usage') return;
+          if (command === 'cancel_chatgpt_sign_in') {
+            if (!state.commitSignInBeforeReturn) state.signInCancelled = true;
+            return { ...state.status,modelAvailable:false,models:[],message:state.status.connected && state.status.planEnabled ? '已连接 ChatGPT 并授权使用订阅，请刷新以获取可用模型。' : state.status.message };
+          }
+          if (command === 'open_chatgpt_usage') return;
+          if (command === 'forget_chatgpt_profile') {
+            const removed = state.status.profiles?.find(profile => profile.id === args.profileId);
+            state.status = { ...state.status, ...(removed?.active ? { connected:false,planEnabled:false,modelAvailable:false,accountLabel:undefined,models:[] } : {}),
+              profiles:state.status.profiles?.filter(profile => profile.id !== args.profileId), message:'已忘记此 ChatGPT 连接。' };
+            return state.status;
+          }
           if (command === 'select_chatgpt_profile') {
             if (state.selectError) throw new Error(state.selectError);
             state.status = { ...state.status, accountLabel: args.profileId === 'registration-a' ? 'Test account · A' : 'Test account · B', profiles: state.status.profiles?.map(profile => ({ ...profile, active: profile.id === args.profileId })) };
@@ -136,7 +151,7 @@ test('official ChatGPT sign-in adds a provider, confirms plan use, streams trans
   await expect.poll(async () => (await calls(page, 'open_chatgpt_usage')).length).toBe(1);
   await editor.getByRole('button', { name: '保存配置', exact: true }).click();
   await expect(editor).toHaveCount(0);
-  const metadata = await page.evaluate(() => JSON.parse(localStorage.getItem('fastdict.v1.providers')!));
+  const metadata = await page.evaluate(() => JSON.parse(localStorage.getItem('fastdict.v1.configuration')!).providers);
   expect(metadata).toEqual([{ id: expect.any(String), name: 'ChatGPT 订阅', kind: 'codex', baseUrl: '', model: 'gpt-6-luna', hasKey: false }]);
   expect(await page.evaluate(() => localStorage.getItem('fastdict.v1.chatgptPlanNotice'))).toBe('acknowledged');
   await page.getByRole('textbox', { name: '待翻译文本' }).fill('Hello world');
@@ -144,7 +159,8 @@ test('official ChatGPT sign-in adds a provider, confirms plan use, streams trans
   await expect(page.locator('.translation-output')).toHaveText('你好，世界。');
   const request = (await calls(page, 'translate_with_chatgpt'))[0].args;
   expect(request).toMatchObject({ model: 'gpt-6-luna', text: 'Hello world', sourceLang: 'auto', targetLang: 'zh-CN', requestId: expect.any(String) });
-  expect(Object.keys(request).sort()).toEqual(['model', 'onEvent', 'requestId', 'sourceLang', 'targetLang', 'text']);
+  expect(Object.keys(request).sort()).toEqual(['instructions', 'model', 'onEvent', 'requestId', 'sourceLang', 'targetLang', 'text']);
+  expect(request.instructions).toContain('professional translator');
   await page.getByRole('button', { name: '偏好设置', exact: true }).click();
   await page.locator('.settings-provider').click();
   await editor.getByRole('button', { name: '刷新连接', exact: true }).click();
@@ -160,6 +176,24 @@ test('official ChatGPT sign-in adds a provider, confirms plan use, streams trans
   const persisted = await page.evaluate(() => Object.values(localStorage).join(''));
   expect(persisted).not.toContain('Test account');
   expectNoCredentialOrHttpCalls(await calls(page));
+});
+
+test('a custom settings prompt reaches the native ChatGPT translation with the selected language', async ({ page }) => {
+  await installFixture(page, { seeded: true });
+  await page.getByLabel('目标语言', { exact: true }).selectOption('ja');
+  await page.getByRole('button', { name: /^偏好设置/ }).click();
+  await page.getByRole('button', { name: '编辑翻译提示词', exact: true }).click();
+  await page.getByRole('textbox', { name: '翻译提示词', exact: true }).fill('Translate into {{targetLang}}. Keep NATIVE_PROMPT_MARKER terminology.');
+  await page.getByRole('button', { name: '保存提示词', exact: true }).click();
+  await page.getByRole('button', { name: '即时翻译', exact: true }).click();
+  await page.getByRole('textbox', { name: '待翻译文本' }).fill('Source with literal {{targetLang}}.');
+  await page.getByRole('button', { name: '翻译', exact: true }).click();
+  await expect(page.locator('.translation-output')).toHaveText('你好，世界。');
+  const invocation = (await calls(page, 'translate_with_chatgpt'))[0];
+  expect(invocation.args.instructions).toContain('Translate into ja');
+  expect(invocation.args.instructions).toContain('NATIVE_PROMPT_MARKER');
+  expect(invocation.args.instructions).not.toContain('Source with literal');
+  expect(invocation.args.text).toBe('Source with literal {{targetLang}}.');
 });
 
 test('saved registrations switch by ID without opening browser sign-in, and failed selection preserves the active account', async ({ page }) => {
@@ -220,7 +254,8 @@ test('refused login remains disconnected and a cancelled browser sign-in cannot 
   await editor.getByRole('button', { name: '取消登录', exact: true }).click();
   await expect.poll(async () => (await calls(page, 'cancel_chatgpt_sign_in')).length).toBe(1);
   await page.evaluate(() => { (window as unknown as { codexTest: ChatGPTFixture }).codexTest.finishSignIn(); });
-  await expect(editor.getByRole('status')).toHaveCount(0);
+  await expect(editor.getByRole('button', { name: 'Continue with ChatGPT', exact:true })).toBeVisible();
+  await expect(editor.getByRole('status')).toContainText('尚未连接');
   await expect(editor.getByRole('alertdialog')).toHaveCount(0);
   expect(await calls(page, 'translate_with_chatgpt')).toEqual([]);
   expectNoCredentialOrHttpCalls(await calls(page));
@@ -267,6 +302,88 @@ test('stopping a ChatGPT stream cancels the matching native request and discards
   await expect(page.locator('.translation-output')).toHaveText('你好');
   expect(await page.evaluate(() => localStorage.getItem('fastdict.v1.history'))).toBeNull();
   expectNoCredentialOrHttpCalls(await calls(page));
+});
+
+for (const close of [false,true]) {
+  test(`late sign-in ${close ? 'editor closure' : 'cancellation'} reconciles committed account B rather than restoring account A`, async ({ page }) => {
+    await installFixture(page,{ seeded:true });
+    await page.getByRole('button',{ name:'偏好设置',exact:true }).click();
+    await page.locator('.settings-provider').click();
+    const editor = page.getByRole('dialog',{ name:'ChatGPT 订阅配置' });
+    await editor.getByRole('button',{ name:'刷新连接',exact:true }).click();
+    await expect(editor.getByLabel('ChatGPT 账号',{ exact:true })).toHaveValue('registration-a');
+    await page.evaluate(() => {
+      const state = (window as unknown as { codexTest:ChatGPTFixture }).codexTest;
+      state.holdSignIn = true; state.commitSignInBeforeReturn = true;
+      state.signInStatus = { ...state.signInStatus,accountLabel:'Committed B',profiles:state.signInStatus.profiles?.map(profile => ({ ...profile,active:profile.id==='registration-b' })) };
+    });
+    await editor.getByRole('button',{ name:'添加账号',exact:true }).click();
+    await expect.poll(async () => (await calls(page,'sign_in_chatgpt')).length).toBe(1);
+    await editor.getByRole('button',{ name:close ? '关闭配置' : '取消登录',exact:true }).click();
+    await expect.poll(async () => (await calls(page,'cancel_chatgpt_sign_in')).length).toBe(1);
+    await expect(editor.getByRole('button',{ name:'正在确认连接',exact:true })).toBeDisabled();
+    await page.evaluate(() => { (window as unknown as { codexTest:ChatGPTFixture }).codexTest.finishSignIn(); });
+    if (close) {
+      await expect(editor).toHaveCount(0);
+      await page.locator('.settings-provider').click();
+      await editor.getByRole('button',{ name:'刷新连接',exact:true }).click();
+    }
+    await expect(editor.getByRole('status')).toContainText(close ? 'Committed B' : '已连接 ChatGPT');
+    await expect(editor.getByLabel('ChatGPT 账号',{ exact:true })).toHaveValue('registration-b');
+    await expect(editor.getByRole('alertdialog')).toHaveCount(0);
+    expect((await page.evaluate(() => (window as unknown as { codexTest:ChatGPTFixture }).codexTest.status)).accountLabel).toBe('Committed B');
+    expect(await calls(page,'translate_with_chatgpt')).toEqual([]);
+  });
+}
+
+test('committed sign-in is connected while model lookup is pending, and closing the editor leaves that connection intact', async ({ page }) => {
+  await installFixture(page);
+  const editor = await chooseChatGPT(page);
+  await page.evaluate(() => { (window as unknown as { codexTest:ChatGPTFixture }).codexTest.holdCheck = true; });
+  await editor.getByRole('button',{ name:'Continue with ChatGPT',exact:true }).click();
+  await expect.poll(async () => (await calls(page,'get_chatgpt_status')).length).toBe(1);
+  await expect(editor.getByRole('status')).toContainText('已连接 ChatGPT');
+  await expect(editor.getByRole('button',{ name:'取消登录',exact:true })).toHaveCount(0);
+  await expect(editor.getByRole('button',{ name:'正在刷新',exact:true })).toBeDisabled();
+  await editor.getByRole('button',{ name:'关闭配置',exact:true }).click();
+  await expect(editor).toHaveCount(0);
+  expect(await calls(page,'cancel_chatgpt_sign_in')).toEqual([]);
+  await page.evaluate(() => { (window as unknown as { codexTest:ChatGPTFixture }).codexTest.releaseCheck(); });
+  await expect(editor).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { codexTest:ChatGPTFixture }).codexTest.status.connected)).toBe(true);
+  expect(await page.evaluate(() => localStorage.getItem('fastdict.v1.chatgptPlanNotice'))).toBeNull();
+});
+
+test('forgetting a registration requires confirmation and preserves the other saved accounts', async ({ page }) => {
+  await installFixture(page,{ seeded:true });
+  await page.getByRole('button',{ name:'偏好设置',exact:true }).click();
+  await page.locator('.settings-provider').click();
+  const editor = page.getByRole('dialog',{ name:'ChatGPT 订阅配置' });
+  await editor.getByRole('button',{ name:'刷新连接',exact:true }).click();
+  await expect(editor.getByLabel('ChatGPT 账号',{ exact:true })).toHaveValue('registration-a');
+  await editor.getByRole('button',{ name:'忘记此连接',exact:true }).click();
+  expect(await calls(page,'forget_chatgpt_profile')).toEqual([]);
+  await expect(editor).toContainText('其他账号会保留');
+  await editor.getByRole('button',{ name:'确认忘记此连接',exact:true }).click();
+  await expect(editor.getByRole('status')).toContainText('已忘记');
+  const accounts = editor.getByLabel('ChatGPT 账号',{ exact:true });
+  await expect(accounts.locator('option[value="registration-a"]')).toHaveCount(0);
+  await expect(accounts.locator('option[value="registration-b"]')).toHaveCount(1);
+  // A removed active registration leaves no implicit selection. The remaining
+  // registration must be explicitly selected before its own removal is enabled.
+  await expect(editor.getByRole('button',{ name:'忘记此连接',exact:true })).toBeDisabled();
+  expect((await calls(page,'forget_chatgpt_profile'))[0].args).toEqual({ profileId:'registration-a',model:'gpt-6-luna' });
+  expect(await calls(page,'sign_in_chatgpt')).toEqual([]);
+  expect(await calls(page,'translate_with_chatgpt')).toEqual([]);
+  await accounts.selectOption('registration-b');
+  await expect(accounts).toHaveValue('registration-b');
+  await expect(editor.getByRole('button',{ name:'忘记此连接',exact:true })).toBeEnabled();
+  expect(await calls(page,'forget_chatgpt_profile')).toHaveLength(1);
+  await editor.getByRole('button',{ name:'忘记此连接',exact:true }).click();
+  expect(await calls(page,'forget_chatgpt_profile')).toHaveLength(1);
+  await editor.getByRole('button',{ name:'确认忘记此连接',exact:true }).click();
+  await expect(accounts).toHaveCount(0);
+  expect((await calls(page,'forget_chatgpt_profile'))[1].args).toEqual({ profileId:'registration-b',model:'gpt-6-luna' });
 });
 
 for (const surface of ['browser', 'mobile'] as const) {

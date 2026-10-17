@@ -4,5 +4,5 @@
   "description": "Local screenshot selection overlay.",
   "windows": ["capture"],
   "platforms": ["windows", "macOS", "linux"],
-  "permissions": ["core:event:default", "core:window:allow-set-focus"]
+  "permissions": ["capture-commands", "core:event:allow-listen", "core:event:allow-unlisten", "core:window:allow-set-focus"]
 }

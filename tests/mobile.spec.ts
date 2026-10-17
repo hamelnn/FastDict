@@ -41,7 +41,7 @@ async function installMobile(page: Page, os: MobileOS, withService = true) {
             if (count && fixture.holdStream) return new Promise(() => undefined);
             if (count) return [1];
             const delta = 'data: ' + JSON.stringify({ choices: [{ delta: { content: '你好，世界。' } }] }) + '\n\n';
-            const end = fixture.holdStream ? '' : 'data: [DONE]\n\n';
+            const end = fixture.holdStream ? '' : 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n';
             return [...new TextEncoder().encode(delta + end), 0];
           }
           if (command === 'plugin:http|fetch_cancel' || command === 'plugin:http|fetch_cancel_body') return;
@@ -86,7 +86,7 @@ for (const os of ['ios', 'android'] as const) {
     test('starts with no services and guides explicit setup without desktop settings or API calls', async ({ page }) => {
       await installMobile(page, os, false);
       const guide = page.getByRole('region', { name: '添加翻译服务引导' });
-      await expect(guide.getByRole('heading', { name: '添加你的第一个翻译服务' })).toBeVisible();
+      await expect(guide.getByRole('heading', { name: '配置翻译服务后开始' })).toBeVisible();
       await expect(page.getByLabel('翻译服务', { exact: true })).toBeDisabled();
       expect(await page.evaluate(() => localStorage.getItem('fastdict.v1.providers'))).toBeNull();
       expect(await calls(page, 'get_api_key')).toHaveLength(0);
@@ -122,8 +122,10 @@ for (const os of ['ios', 'android'] as const) {
       await navigate(page, '翻译记录');
       await expect(page.locator('.history-card')).toHaveCount(1);
       await navigate(page, '偏好设置');
+      await page.getByRole('button', { name: '高级设置', exact: true }).click();
       await expect(page.locator('#quickstart')).not.toContainText('Ctrl');
       await expect(page.getByRole('button', { name: /^退出\s*FastLingo$/ })).toHaveCount(0);
+      await page.getByRole('button', { name: '返回设置', exact: true }).click();
       await page.getByRole('button', { name: /移动测试服务/ }).click();
       const editor = page.getByRole('dialog', { name: 'API 服务配置' });
       await editor.getByPlaceholder('输入新密钥以替换').fill('mobile-replacement-test-key');
@@ -168,6 +170,21 @@ for (const os of ['ios', 'android'] as const) {
         (window as unknown as { mobileTest: { resolvePicker: () => void } }).mobileTest.resolvePicker();
       });
       await expect(page.locator('.translation-output')).toHaveText('你好，世界。');
+    });
+
+    test('keeps picked text local when automatic translation is disabled while the native picker waits', async ({ page }) => {
+      await installMobile(page, os);
+      await prepareImage(page);
+      await page.evaluate(() => { (window as unknown as { mobileTest: { holdPicker: boolean } }).mobileTest.holdPicker = true; });
+      await page.getByRole('button', { name: '选取截图', exact: true }).click();
+      await expect.poll(async () => (await calls(page, 'mobile_pick_image')).length).toBe(1);
+      await navigate(page, '偏好设置');
+      await page.getByRole('switch', { name: '粘贴与导入后自动翻译', exact: true }).click();
+      await page.evaluate(() => { (window as unknown as { mobileTest: { resolvePicker: () => void } }).mobileTest.resolvePicker(); });
+      await expect(page.getByRole('textbox', { name: '待翻译文本' })).toHaveValue(/hello world/i);
+      await expect(page.getByRole('button', { name: '翻译', exact: true })).toBeEnabled();
+      expect(await calls(page, 'plugin:http|fetch')).toHaveLength(0);
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem('fastdict.v1.history') || '[]'))).toHaveLength(0);
     });
 
     test('stops an active translation when backgrounded and retains partial text', async ({ page }) => {

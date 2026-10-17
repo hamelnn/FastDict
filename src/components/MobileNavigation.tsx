@@ -19,7 +19,7 @@ export function MobileNavigation({ view, onChange }: { view: MobileView; onChang
           aria-current={view === id ? 'page' : undefined}
           onClick={() => onChange(id)}
         >
-          <span className="mobile-tab-icon"><Icon size={22} strokeWidth={1.8} /></span>
+          <Icon size={21} strokeWidth={view === id ? 2 : 1.6} aria-hidden="true" />
           <span>{label}</span>
         </button>
       ))}

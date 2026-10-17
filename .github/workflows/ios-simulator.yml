@@ -3,6 +3,18 @@ name: Build iOS simulator app
 # No Apple signing credentials, device IPA, App Store upload or release creation.
 on:
   workflow_dispatch:
+  push:
+    paths: &mobile-paths
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'scripts/**'
+      - 'package*.json'
+      - 'index.html'
+      - 'tsconfig*.json'
+      - 'vite.config.*'
+      - '.github/workflows/ios-simulator.yml'
+  pull_request:
+    paths: *mobile-paths
 
 permissions:
   contents: read
@@ -19,15 +31,16 @@ jobs:
     env:
       CI: 'true'
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22'
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           targets: aarch64-apple-ios-sim,x86_64-apple-ios
-      - uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: './src-tauri -> target'
       - name: Check the runner's Xcode and CocoaPods
@@ -38,15 +51,18 @@ jobs:
       - run: npm run check
       - name: Initialize Xcode project
         run: npm run ios:init
-      - name: Build unsigned simulator app
-        run: npm run ios:build
+      - name: Build both unsigned simulator architectures in the same workspace
+        run: |
+          npm run ios:build -- --target=aarch64-sim
+          npm run ios:build -- --target=x86_64
       - name: Launch on a disposable iPhone simulator and capture the screen
+        if: github.event_name == 'workflow_dispatch'
         env:
           FASTDICT_IOS_SMOKE: 'true'
         run: node scripts/ios-smoke.mjs
       - name: Upload simulator app (cannot install on an iPhone)
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        if: ${{ always() && github.event_name == 'workflow_dispatch' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: FastLingo-iOS-simulator-${{ github.run_number }}
           path: |

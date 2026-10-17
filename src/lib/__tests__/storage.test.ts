@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HistoryItem, Provider } from '../../types';
-import { acknowledgeChatGPTPlan, addHistory, clearHistory, DEFAULT_PREFERENCES, deleteApiKey, getApiKey, hasAcknowledgedChatGPTPlan, HISTORY_LIMIT, loadHistory, loadPreferences, loadProviders, saveApiKey, saveHistory, savePreferences, saveProviders } from '../storage';
+import { acknowledgeChatGPTPlan, addHistory, clearHistory, DEFAULT_PREFERENCES, deleteApiKey, getApiKey, hasAcknowledgedChatGPTPlan, HISTORY_BYTE_LIMIT, HISTORY_LIMIT, loadHistory, loadPreferences, loadProviders, saveApiKey, saveHistory, savePreferences, saveProviders } from '../storage';
 import { PROVIDER_PRESETS } from '../catalog';
+import { DEFAULT_TRANSLATION_PROMPT, MAX_PROMPT_LENGTH } from '../prompts';
 
 let values: Map<string, string>;
 beforeEach(() => {
@@ -109,6 +110,27 @@ describe('local metadata and key storage', () => {
     values.set('fastdict.v1.preferences', JSON.stringify({ ocrLang: 'chi_sim+eng' }));
     expect(loadPreferences().ocrLang).toBe('eng+chi_sim');
   });
+  it('loads the default prompt for old preferences without writing migration defaults', () => {
+    const original = JSON.stringify({ autoTranslate: false, activeProviderId: 'existing' });
+    values.set('fastdict.v1.preferences', original);
+    expect(loadPreferences().translationPrompt).toBe(DEFAULT_TRANSLATION_PROMPT);
+    expect(values.get('fastdict.v1.preferences')).toBe(original);
+  });
+  it('persists the custom prompt and restores the default without affecting other choices', () => {
+    const custom = 'Translate into {{targetLang}} using concise technical terminology.';
+    savePreferences({ ...DEFAULT_PREFERENCES, translationPrompt: custom, targetLang: 'ja', autoTranslate: false });
+    expect(loadPreferences()).toMatchObject({ translationPrompt: custom, targetLang: 'ja', autoTranslate: false });
+    savePreferences({ ...loadPreferences(), translationPrompt: DEFAULT_TRANSLATION_PROMPT });
+    expect(loadPreferences()).toMatchObject({ translationPrompt: DEFAULT_TRANSLATION_PROMPT, targetLang: 'ja', autoTranslate: false });
+  });
+  it('falls back from invalid stored prompts without truncating or rewriting the original bytes', () => {
+    for (const translationPrompt of [null, 123, '', 'No target language variable', '{{unknown}} {{targetLang}}', 'x'.repeat(MAX_PROMPT_LENGTH) + '{{targetLang}}']) {
+      const original = JSON.stringify({ translationPrompt });
+      values.set('fastdict.v1.preferences', original);
+      expect(loadPreferences().translationPrompt).toBe(DEFAULT_TRANSLATION_PROMPT);
+      expect(values.get('fastdict.v1.preferences')).toBe(original);
+    }
+  });
   it('bounds history, deduplicates IDs and clears records', () => {
     saveHistory(Array.from({ length: HISTORY_LIMIT + 10 }, (_, index) => history(index)));
     expect(loadHistory()).toHaveLength(HISTORY_LIMIT);
@@ -122,5 +144,47 @@ describe('local metadata and key storage', () => {
     expect(loadHistory()).toEqual([history(1)]);
     vi.stubGlobal('localStorage', { setItem: () => { throw new Error('quota'); } });
     expect(() => saveProviders([])).toThrow('无法保存');
+  });
+  it('keeps the newest history within the total UTF-8 byte budget', () => {
+    const items = Array.from({ length: 30 }, (_, index) => ({ ...history(index), source: '汉'.repeat(60_000), translation: '译'.repeat(100_000) }));
+    const retained = saveHistory(items);
+    expect(retained.length).toBeLessThan(items.length);
+    expect(retained[0].id).toBe(items[0].id);
+    expect(new TextEncoder().encode(values.get('fastdict.v1.history')!).length).toBeLessThanOrEqual(HISTORY_BYTE_LIMIT);
+    expect(loadHistory()).toEqual(retained);
+  });
+  it('restores long successful translations in full, including a surrogate pair at the old truncation boundary', () => {
+    const translation = `${'x'.repeat(99_999)}\u{1F30F}${'后续译文'.repeat(30_000)}`;
+    const item = { ...history(1), translation };
+    expect(saveHistory([item])).toEqual([item]);
+    expect(loadHistory()[0].translation).toBe(translation);
+  });
+  it('preserves previous bytes when one complete translation exceeds the serialized history budget', () => {
+    saveHistory([history(1)]);
+    const before = values.get('fastdict.v1.history');
+    const item = { ...history(2), translation: '\u0001'.repeat(400_000) };
+    expect(new TextEncoder().encode(item.translation).length).toBeLessThan(1_048_576);
+    expect(() => addHistory(item)).toThrow('完整译文超过');
+    expect(values.get('fastdict.v1.history')).toBe(before);
+    expect(loadHistory()).toEqual([history(1)]);
+  });
+  it('recovers quota by evicting only the oldest records and returns the persisted list', () => {
+    saveHistory([history(2), history(1)]);
+    const originalSet = localStorage.setItem;
+    const quota = JSON.stringify([history(3), history(2)]).length;
+    localStorage.setItem = (key: string, value: string) => {
+      if (value.length > quota) throw new DOMException('Quota reached', 'QuotaExceededError');
+      originalSet(key, value);
+    };
+    const retained = addHistory(history(3));
+    expect(retained.map(item => item.id)).toEqual(['3', '2']);
+    expect(loadHistory()).toEqual(retained);
+  });
+  it('does not erase old records when even the newest record cannot be saved', () => {
+    saveHistory([history(1)]);
+    const before = values.get('fastdict.v1.history');
+    localStorage.setItem = () => { throw new DOMException('Quota reached', 'QuotaExceededError'); };
+    expect(() => addHistory(history(2))).toThrow('原有数据已保留');
+    expect(values.get('fastdict.v1.history')).toBe(before);
   });
 });

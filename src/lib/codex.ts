@@ -1,5 +1,7 @@
 import type { TranslationRequest } from '../types';
 import { isMobile, isNative } from './platform';
+import { createId } from './id';
+import { renderTranslationPrompt } from './prompts';
 
 export interface ChatGPTStatus {
   available: boolean;
@@ -41,6 +43,12 @@ export async function getCodexStatus(model = 'gpt-6-luna'): Promise<ChatGPTStatu
   return normalizedStatus(await invoke<ChatGPTStatus>('get_chatgpt_status', { model }));
 }
 
+export async function getChatGPTConnection(model = 'gpt-6-luna'): Promise<ChatGPTStatus> {
+  if (!isNative || isMobile) return { available: false, connected: false, planEnabled: false, modelAvailable: false, message: desktopMessage };
+  const { invoke } = await import('@tauri-apps/api/core');
+  return normalizedStatus(await invoke<ChatGPTStatus>('get_chatgpt_status', { model, queryCatalog: false }));
+}
+
 export async function signInChatGPT(model = 'gpt-6-luna', newAccount = false): Promise<ChatGPTStatus> {
   if (!isNative || isMobile) throw new Error(desktopMessage);
   const { invoke } = await import('@tauri-apps/api/core');
@@ -53,10 +61,16 @@ export async function selectChatGPTProfile(profileId: string, model = 'gpt-6-lun
   return normalizedStatus(await invoke<ChatGPTStatus>('select_chatgpt_profile', { profileId, model }));
 }
 
-export async function cancelChatGPTSignIn(): Promise<void> {
-  if (!isNative || isMobile) return;
+export async function cancelChatGPTSignIn(): Promise<ChatGPTStatus> {
+  if (!isNative || isMobile) return { available: false, connected: false, planEnabled: false, modelAvailable: false, message: desktopMessage };
   const { invoke } = await import('@tauri-apps/api/core');
-  await invoke('cancel_chatgpt_sign_in');
+  return normalizedStatus(await invoke<ChatGPTStatus>('cancel_chatgpt_sign_in'));
+}
+
+export async function forgetChatGPTProfile(profileId: string, model = 'gpt-6-luna'): Promise<ChatGPTStatus> {
+  if (!isNative || isMobile) throw new Error(desktopMessage);
+  const { invoke } = await import('@tauri-apps/api/core');
+  return normalizedStatus(await invoke<ChatGPTStatus>('forget_chatgpt_profile', { profileId, model }));
 }
 
 export async function disconnectChatGPT(): Promise<ChatGPTStatus> {
@@ -80,9 +94,10 @@ export async function translateWithCodex(request: TranslationRequest): Promise<s
   if (!request.text.trim()) throw new Error('请输入需要翻译的文本。');
   if (request.text.length > 60_000) throw new Error('文本过长，请分段翻译（每次最多 60,000 个字符）。');
   if (!request.targetLang.trim()) throw new Error('请选择目标语言。');
+  const instructions = renderTranslationPrompt(request.promptTemplate, request.sourceLang, request.targetLang);
   const { Channel, invoke } = await import('@tauri-apps/api/core');
   if (request.signal.aborted) throw abortError();
-  const requestId = crypto.randomUUID();
+  const requestId = createId();
   const channel = new Channel<ChatGPTEvent>();
   let finished = false;
   let started = false;
@@ -105,7 +120,7 @@ export async function translateWithCodex(request: TranslationRequest): Promise<s
     started = true;
     const pending = invoke<string>('translate_with_chatgpt', {
       requestId, model, text: request.text, sourceLang: request.sourceLang,
-      targetLang: request.targetLang, onEvent: channel,
+      targetLang: request.targetLang, instructions, onEvent: channel,
     });
     const result = await Promise.race([pending, interrupted]);
     if (request.signal.aborted) throw abortError();

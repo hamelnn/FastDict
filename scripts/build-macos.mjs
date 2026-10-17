@@ -4,6 +4,7 @@ import { resolve, dirname, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { macosPreflight } from './macos-preflight.mjs';
+import { cargoTargetDirectory, desktopOutputPaths } from './build-artifacts.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const targets = new Map([
@@ -59,8 +60,10 @@ async function main() {
   env.APPLE_SIGNING_IDENTITY ||= macConfig.bundle?.macOS?.signingIdentity || config.bundle?.macOS?.signingIdentity || '-';
   if (packageInfo.version !== config.version) throw new Error('前端与原生应用版本不一致。');
 
-  run(process.execPath, [join(root, 'node_modules/@tauri-apps/cli/tauri.js'), 'build', '--target', target, '--bundles', 'app,dmg', '--ci'], env);
-  const bundleRoot = join(root, 'src-tauri/target', target, 'release/bundle');
+  const targetDirectory = cargoTargetDirectory(root, env);
+  env.CARGO_TARGET_DIR = targetDirectory;
+  run(process.execPath, [join(root, 'node_modules/@tauri-apps/cli/tauri.js'), 'build', '--target', target, '--bundles', 'app,dmg', '--ci', '--', '--locked'], env);
+  const bundleRoot = desktopOutputPaths(targetDirectory, target).bundle;
   const app = join(bundleRoot, 'macos', `${config.productName}.app`);
   if (!(await stat(app)).isDirectory()) throw new Error('未找到真实的 macOS 应用包。');
   const executableName = run('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleExecutable', join(app, 'Contents/Info.plist')], env, true).stdout.trim();

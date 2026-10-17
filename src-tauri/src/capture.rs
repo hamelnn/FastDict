@@ -33,6 +33,19 @@ struct CaptureSession {
     active: Option<ActiveCapture>,
 }
 
+impl CaptureSession {
+    fn accepts_work(&self, id: u64) -> bool {
+        self.active.as_ref().is_some_and(|active| active.id == id && !active.finishing)
+    }
+    fn renderer_reloading(&mut self) -> Option<u64> {
+        self.overlay_ready = false;
+        self.active.as_ref().filter(|active| !active.finishing).map(|active| active.id)
+    }
+    fn replay_session(&self) -> Option<u64> {
+        self.active.as_ref().filter(|active| active.frame.is_some() && !active.finishing).map(|active| active.id)
+    }
+}
+
 struct ActiveCapture {
     id: u64,
     frame: Option<CaptureFrame>,
@@ -40,9 +53,42 @@ struct ActiveCapture {
     finishing: bool,
 }
 
+// Native window changes belonging to one transition must execute together. In
+// particular, a late fullscreen setter must never run after cancellation hides
+// the overlay. Revalidate the session on the UI thread, not before queueing it.
+async fn on_main_thread<T: Send + 'static>(app: &AppHandle,
+    work: impl FnOnce(AppHandle) -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let ui_app = app.clone();
+    app.run_on_main_thread(move || {
+        if sender.is_closed() { return; }
+        let _ = sender.send(work(ui_app));
+    }).map_err(|error| error.to_string())?;
+    receiver.await.map_err(|_| "截图窗口未能完成更新".to_string())?
+}
+
+fn with_active_session<T>(state: &CaptureState, id: u64,
+    work: impl FnOnce() -> Result<T, String>) -> Result<Option<T>, String> {
+    if !state.inner.lock().map_err(|_| "截图状态暂不可用")?.accepts_work(id) { return Ok(None); }
+    // Never keep the session lock across native calls. A concurrent cancellation
+    // can claim finishing, but its UI hide runs after this entire UI transition.
+    work().map(Some)
+}
+
 fn require_overlay(window: &WebviewWindow) -> Result<(), String> {
     if window.label() != OVERLAY_LABEL { return Err("仅截图窗口可以操作屏幕图像".into()); }
     Ok(())
+}
+
+pub fn recover(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+    require_overlay(&window)?;
+    if !cancel_window(&app)? { hide_overlay_on_main_thread(&app)?; }
+    crate::show_sidebar_impl(&app)
+}
+
+pub fn report_boot_error(app: AppHandle, window: WebviewWindow, stage: &str) -> Result<(), String> {
+    require_overlay(&window)?;
+    crate::diagnostics::report_capture(&app, stage)
 }
 
 fn encode(image: &RgbaImage) -> Result<Screenshot, String> {
@@ -130,52 +176,56 @@ pub async fn begin(app: AppHandle) -> Result<(), String> {
 }
 
 async fn begin_inner(app: &AppHandle, id: u64) -> Result<(), String> {
-    let point = cursor_point(app);
-    let main_was_visible = if let Some(window) = app.get_webview_window("main") {
-        let visible = window.is_visible().unwrap_or(true);
-        window.hide().map_err(|error| error.to_string())?;
-        visible
-    } else { false };
-    let window = app.get_webview_window(OVERLAY_LABEL).ok_or("截图窗口未能初始化，请重新启动应用")?;
-    window.hide().map_err(|error| error.to_string())?;
+    let background = on_main_thread(app, move |app| {
+        with_active_session(&app.state::<CaptureState>(), id, || {
+            let point = cursor_point(&app);
+            let main_was_visible = if let Some(window) = app.get_webview_window("main") {
+                let visible = window.is_visible().unwrap_or(true);
+                window.hide().map_err(|error| error.to_string())?;
+                visible
+            } else { false };
+            let window = app.get_webview_window(OVERLAY_LABEL).ok_or("截图窗口未能初始化，请重新启动应用")?;
+            window.hide().map_err(|error| error.to_string())?;
+            Ok((point, main_was_visible))
+        })
+    }).await?;
+    let Some((point, main_was_visible)) = background else { return Ok(()); };
     let frame = tauri::async_runtime::spawn_blocking(move || {
         if main_was_visible { std::thread::sleep(Duration::from_millis(35)); }
         take_frame(point)
     }).await.map_err(|error| error.to_string())??;
-    let (x, y, width, height) = (frame.x, frame.y, frame.monitor_width, frame.monitor_height);
-    {
-        let state = app.state::<CaptureState>();
-        let inner = state.inner.lock().map_err(|_| "截图状态暂不可用")?;
-        if inner.active.as_ref().map(|active| active.id) != Some(id) { return Ok(()); }
-    }
-
-    // Fullscreen placement also covers the taskbar, at the destination DPI.
-    #[cfg(target_os = "macos")]
-    {
-        window.set_simple_fullscreen(false).map_err(|error| error.to_string())?;
-        window.set_position(tauri::LogicalPosition::new(x as f64, y as f64)).map_err(|error| error.to_string())?;
-        window.set_size(tauri::LogicalSize::new(width as f64, height as f64)).map_err(|error| error.to_string())?;
-        // Enter simple fullscreen only after the preview has decoded. Changing
-        // NSApplication presentation while this window is hidden would briefly
-        // hide the user's menu bar and Dock during screenshot preparation.
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        window.set_fullscreen(false).map_err(|error| error.to_string())?;
-        window.set_position(PhysicalPosition::new(x, y)).map_err(|error| error.to_string())?;
-        window.set_size(PhysicalSize::new(width, height)).map_err(|error| error.to_string())?;
-        window.set_fullscreen_on_monitor(PhysicalPosition::new(x as f64 + 1.0, y as f64 + 1.0))
-            .map_err(|error| error.to_string())?;
-    }
-
-    let notify = {
-        let state = app.state::<CaptureState>();
-        let mut inner = state.inner.lock().map_err(|_| "截图状态暂不可用")?;
-        let Some(active) = inner.active.as_mut().filter(|active| active.id == id) else { return Ok(()); };
-        active.frame = Some(frame);
-        inner.overlay_ready
-    };
-    if notify { emit_start(app, id)?; }
+    let prepared = on_main_thread(app, move |app| {
+        with_active_session(&app.state::<CaptureState>(), id, || {
+            let window = app.get_webview_window(OVERLAY_LABEL).ok_or("截图窗口未能初始化，请重新启动应用")?;
+            let (x, y, width, height) = (frame.x, frame.y, frame.monitor_width, frame.monitor_height);
+            // Fullscreen placement also covers the taskbar, at the destination DPI.
+            #[cfg(target_os = "macos")]
+            {
+                window.set_simple_fullscreen(false).map_err(|error| error.to_string())?;
+                window.set_position(tauri::LogicalPosition::new(x as f64, y as f64)).map_err(|error| error.to_string())?;
+                window.set_size(tauri::LogicalSize::new(width as f64, height as f64)).map_err(|error| error.to_string())?;
+                // Enter simple fullscreen only after the preview has decoded.
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                window.set_fullscreen(false).map_err(|error| error.to_string())?;
+                window.set_position(PhysicalPosition::new(x, y)).map_err(|error| error.to_string())?;
+                window.set_size(PhysicalSize::new(width, height)).map_err(|error| error.to_string())?;
+                window.set_fullscreen_on_monitor(PhysicalPosition::new(x as f64 + 1.0, y as f64 + 1.0))
+                    .map_err(|error| error.to_string())?;
+            }
+            let notify = {
+                let state = app.state::<CaptureState>();
+                let mut inner = state.inner.lock().map_err(|_| "截图状态暂不可用")?;
+                if !inner.accepts_work(id) { return Ok(false); }
+                if let Some(active) = inner.active.as_mut() { active.frame = Some(frame); }
+                inner.overlay_ready
+            };
+            if notify { emit_start(&app, id)?; }
+            Ok(true)
+        }).map(|prepared| prepared == Some(true))
+    }).await?;
+    if !prepared { return Ok(()); }
     let watchdog_app = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -200,11 +250,26 @@ pub fn overlay_ready(app: AppHandle, window: WebviewWindow) -> Result<(), String
         let state = app.state::<CaptureState>();
         let mut inner = state.inner.lock().map_err(|_| "截图状态暂不可用")?;
         inner.overlay_ready = true;
-        inner.active.as_ref().filter(|active| active.frame.is_some() && !active.visible && !active.finishing).map(|active| active.id)
+        // A new renderer has no session state even if this native window was
+        // already visible. Replaying the active frame makes the handshake safe
+        // if a platform misses the page-start callback during recovery.
+        inner.replay_session()
     };
     if let Some(id) = pending { emit_start(&app, id)?; }
     eprintln!("FastLingo: capture overlay ready");
     Ok(())
+}
+
+pub fn page_loading(app: &AppHandle) {
+    let active = app.try_state::<CaptureState>().and_then(|state| state.inner.lock().ok().and_then(|mut inner| inner.renderer_reloading()));
+    if let Some(id) = active {
+        // Never leave a visible fullscreen HWND attached to an empty new page.
+        match cancel_session(app, id) {
+            Ok(true) => { let _ = crate::show_sidebar_impl(app); }
+            Ok(false) => (),
+            Err(_) => crate::diagnostics::record(app, "capture-reload-cleanup-pending"),
+        }
+    }
 }
 
 pub fn get_capture(app: AppHandle, window: WebviewWindow, session_id: u64) -> Result<CapturePreview, String> {
@@ -416,6 +481,52 @@ pub fn restore_visible(app: &AppHandle) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    #[test]
+    fn delayed_window_work_cannot_run_after_cancel_or_replace_the_next_capture() {
+        let state = CaptureState { inner: Mutex::new(CaptureSession { next_id: 1, overlay_ready: true,
+            active: Some(ActiveCapture { id: 1, frame: None, visible: false, finishing: false }) }) };
+        let changes = std::cell::RefCell::new(Vec::new());
+        // This closure represents the native transition queued before the user
+        // cancelled. It must inspect state when executed, not when enqueued.
+        let delayed = || with_active_session(&state, 1, || { changes.borrow_mut().push("fullscreen"); Ok(()) });
+        state.inner.lock().unwrap().active.as_mut().unwrap().finishing = true;
+        assert_eq!(delayed().unwrap(), None);
+        state.inner.lock().unwrap().active = None;
+        assert_eq!(delayed().unwrap(), None);
+        state.inner.lock().unwrap().active = Some(ActiveCapture { id: 2, frame: None, visible: false, finishing: false });
+        assert_eq!(delayed().unwrap(), None);
+        assert!(changes.borrow().is_empty());
+        assert_eq!(with_active_session(&state, 2, || { changes.borrow_mut().push("new fullscreen"); Ok(()) }).unwrap(), Some(()));
+        assert_eq!(*changes.borrow(), vec!["new fullscreen"]);
+    }
+    #[test]
+    fn cancellation_during_a_window_transition_does_not_deadlock_or_publish_a_frame() {
+        let state = CaptureState { inner: Mutex::new(CaptureSession { next_id: 1, overlay_ready: true,
+            active: Some(ActiveCapture { id: 1, frame: None, visible: false, finishing: false }) }) };
+        let result = with_active_session(&state, 1, || {
+            let mut inner = state.inner.try_lock().expect("native window calls must not hold the session lock");
+            inner.active.as_mut().unwrap().finishing = true;
+            assert!(!inner.accepts_work(1));
+            Ok(())
+        });
+        assert_eq!(result.unwrap(), Some(()));
+        assert_eq!(with_active_session(&state, 1, || panic!("cancelled capture must not show again")).unwrap(), None::<()>);
+    }
+    #[test]
+    fn renderer_reload_invalidates_readiness_and_claims_visible_session_for_cleanup() {
+        let frame = CaptureFrame { image: RgbaImage::new(1, 1), preview: Screenshot { data_url: "synthetic".into(), width:1, height:1 }, x:0, y:0, monitor_width:1, monitor_height:1 };
+        let mut session = CaptureSession { next_id:42, overlay_ready:true, active:Some(ActiveCapture { id:42, frame:Some(frame), visible:true, finishing:false }) };
+        assert_eq!(session.renderer_reloading(), Some(42));
+        assert!(!session.overlay_ready);
+        // Fallback handshakes replay even a previously-visible preview.
+        assert_eq!(session.replay_session(), Some(42));
+        session.active.as_mut().unwrap().finishing = true;
+        assert_eq!(session.renderer_reloading(), None);
+        assert_eq!(session.replay_session(), None);
+        session.active = None;
+        assert_eq!(session.replay_session(), None);
+    }
     #[test]
     fn screenshot_png_roundtrip_preserves_small_glyph_pixels() {
         let image = image::RgbaImage::from_fn(12, 8, |x, y| {

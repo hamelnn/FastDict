@@ -47,6 +47,14 @@ pub fn report(app: &AppHandle, stage: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn report_capture(app: &AppHandle, stage: &str) -> Result<(), String> {
+    if !SAFE_STAGES.contains(&stage) { return Err("诊断阶段无效".into()); }
+    // Capture recovery must not mark the independent main renderer as failed.
+    record(app, "capture-frontend-error");
+    record(app, stage);
+    Ok(())
+}
+
 pub fn main_ready(app: &AppHandle) {
     if let Some(state) = app.try_state::<DiagnosticsState>() {
         state.ready.store(true, Ordering::SeqCst);
@@ -56,7 +64,11 @@ pub fn main_ready(app: &AppHandle) {
 
 pub fn page_loading(app: &AppHandle, label: &str) {
     if label != "main" {
-        if label == "capture" { record(app, "capture-page-started"); }
+        if label == "capture" {
+            record(app, "capture-page-started");
+            #[cfg(desktop)]
+            crate::capture::page_loading(app);
+        }
         return;
     }
     let Some(state) = app.try_state::<DiagnosticsState>() else { return; };

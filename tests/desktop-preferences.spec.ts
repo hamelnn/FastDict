@@ -93,6 +93,7 @@ async function calls(page: Page, command: string): Promise<NativeCall[]> {
 
 async function openSettings(page: Page) {
   await page.getByRole('button', { name: /^偏好设置/ }).click();
+  await page.getByRole('button', { name: '高级设置', exact: true }).click();
   const panel = page.getByRole('region', { name: '桌面行为' });
   await expect(panel).toBeVisible();
   await expect(panel).toHaveAttribute('aria-busy', 'false');

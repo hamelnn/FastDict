@@ -85,6 +85,7 @@ test('shows native Mac shortcuts and read-only permission status without prompti
   expect(await calls(page, 'request_screen_permission')).toHaveLength(0);
   expect(await calls(page, 'open_screen_permission_settings')).toHaveLength(0);
   await page.getByRole('button', { name: /^截图翻译/ }).click();
+  await page.getByRole('button', { name: '高级设置', exact: true }).click();
   await expect(page.getByRole('region', { name: 'macOS 屏幕录制权限' })).toContainText('尚未授权');
   expect(await calls(page, 'start_capture')).toHaveLength(0);
   expect(await calls(page, 'request_screen_permission')).toHaveLength(0);
@@ -94,6 +95,7 @@ test('shows native Mac shortcuts and read-only permission status without prompti
 test('requests permission only on an explicit action, opens settings and rechecks before native capture', async ({ page }) => {
   await installMac(page);
   await page.getByRole('button', { name: /^截图翻译/ }).click();
+  await page.getByRole('button', { name: '高级设置', exact: true }).click();
   const panel = page.getByRole('region', { name: 'macOS 屏幕录制权限' });
   await panel.getByRole('button', { name: '授予录屏权限', exact: true }).click();
   await expect.poll(async () => (await calls(page, 'request_screen_permission')).length).toBe(1);
@@ -112,6 +114,7 @@ test('requests permission only on an explicit action, opens settings and recheck
 test('updates a successful permission request immediately and respects menu bar actions and clipboard input', async ({ page }) => {
   await installMac(page, 'denied', true);
   await page.getByRole('button', { name: '设置录屏权限', exact: true }).click();
+  await page.getByRole('button', { name: '高级设置', exact: true }).click();
   const panel = page.getByRole('region', { name: 'macOS 屏幕录制权限' });
   await panel.getByRole('button', { name: '授予录屏权限', exact: true }).click();
   await expect(panel.locator('.permission-badge')).toHaveText('已授权');
@@ -122,9 +125,10 @@ test('updates a successful permission request immediately and respects menu bar 
   await page.getByRole('button', { name: '隐藏到菜单栏', exact: true }).click();
   await expect.poll(async () => (await calls(page, 'hide_window')).length).toBe(1);
   await emit(page, 'fastdict://navigate', 'settings');
+  await page.getByRole('button', { name: '高级设置', exact: true }).click();
   await expect(panel).toBeVisible();
-  await expect(page.locator('.shortcut-row').filter({ hasText: '桌面全局截图翻译' }).locator('kbd')).toHaveText('⌥⌘S');
-  await expect(page.locator('.shortcut-row').filter({ hasText: '桌面全局剪贴板翻译' }).locator('kbd')).toHaveText('⌥⌘V');
+  await expect(page.locator('.shortcut-row').filter({ hasText: '截图翻译' }).locator('kbd')).toHaveText('⌥⌘S');
+  await expect(page.locator('.shortcut-row').filter({ hasText: '剪贴板翻译' }).locator('kbd')).toHaveText('⌥⌘V');
   await expect(page.locator('.mac-quit-hint')).toHaveText('⌘Q / ⌥⌘Q');
   await page.getByRole('button', { name: /^退出\s*FastLingo$/ }).click();
   await expect.poll(async () => (await calls(page, 'quit_app')).length).toBe(1);
@@ -134,6 +138,7 @@ test('routes a global native permission denial to setup without requesting acces
   await installMac(page, 'granted');
   await page.evaluate(() => (window as unknown as { e2eMac: MacFixture }).e2eMac.setPermission('denied'));
   await emit(page, 'fastdict://error', '请开启 macOS 屏幕录制权限。');
+  await page.getByRole('button', { name: '高级设置', exact: true }).click();
   await expect(page.getByRole('region', { name: 'macOS 屏幕录制权限' })).toContainText('尚未授权');
   expect(await calls(page, 'request_screen_permission')).toHaveLength(0);
   expect(await page.evaluate(() => (window as unknown as { e2eMac: MacFixture }).e2eMac.screenSharingAttempts)).toBe(0);
@@ -172,10 +177,11 @@ async function savePreview(page: Page, info: TestInfo, filename: string): Promis
 test('saves clearly simulated Mac workspace and permission previews without API calls', async ({ page }, info) => {
   await installMac(page, 'granted');
   await page.getByRole('textbox', { name: '待翻译文本' }).fill('The best journeys begin with a clear view.');
-  await expect(page.getByText('本机识别已就绪 · 松开即翻译', { exact: true })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByLabel('本机识别已就绪', { exact: true })).toBeVisible({ timeout: 60_000 });
   await savePreview(page, info, 'macos-workspace-preview.png');
   await page.evaluate(() => (window as unknown as { e2eMac: MacFixture }).e2eMac.setPermission('denied'));
   await emit(page, 'fastdict://navigate', 'settings');
+  await page.getByRole('button', { name: '高级设置', exact: true }).click();
   await expect(page.getByRole('region', { name: 'macOS 屏幕录制权限' })).toContainText('尚未授权');
   await savePreview(page, info, 'macos-permissions-preview.png');
   expect((await page.evaluate(() => (window as unknown as { e2eMac: MacFixture }).e2eMac.calls)).some(call => call.command.startsWith('plugin:http|'))).toBe(false);

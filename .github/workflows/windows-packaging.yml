@@ -16,15 +16,16 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22'
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           targets: x86_64-pc-windows-msvc
-      - uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: './src-tauri -> target'
       - run: npm ci
@@ -42,14 +43,18 @@ jobs:
             if ((Get-Item $path).Length -ne $artifact.bytes) { throw 'Artifact size mismatch.' }
             if ((Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $artifact.sha256) { throw 'Artifact hash mismatch.' }
           }
-      - uses: actions/upload-artifact@v7
+      - name: Stage exactly the outer delivery inventory
+        run: node scripts/verify-windows-delivery.mjs release --stage=release/windows-delivery
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: FastLingo-Windows-x64-${{ github.run_number }}
-          path: |
-            release/*-setup.exe
-            release/FastLingo-Windows-x64-*.zip
-            release/manifest.json
-            release/README-Windows.txt
-            release/THIRD_PARTY_NOTICES.md
+          path: release/windows-delivery/
           if-no-files-found: error
           retention-days: 14
+      - name: Download the delivered artifact for independent verification
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: FastLingo-Windows-x64-${{ github.run_number }}
+          path: release/windows-downloaded
+      - name: Verify downloaded inventory and hashes
+        run: node scripts/verify-windows-delivery.mjs release/windows-downloaded

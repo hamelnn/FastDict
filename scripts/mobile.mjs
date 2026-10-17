@@ -11,6 +11,12 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export function parseMobileArgs(args, arch = process.arch) {
   const [platform, action, ...options] = args;
   if (!['android', 'ios'].includes(platform) || !['init', 'build', 'dev', 'check'].includes(action)) throw new Error('用法：node scripts/mobile.mjs android|ios init|build|dev|check [--target=目标]');
+  // Device selection belongs to Tauri: it supports physical devices, simulators,
+  // --open and --host. A packaging target must never be silently ignored here.
+  if (action === 'dev') {
+    if (options.some(option => option === '--target' || option.startsWith('--target='))) throw new Error('交互调试使用设备名称选择目标；--target 仅用于 init、check 和 build。例如 npm run ios -- --open。');
+    return { platform, action, target: undefined, help: options.includes('--help') || options.includes('-h'), devArgs: options };
+  }
   let target = platform === 'android' ? 'aarch64' : arch === 'arm64' ? 'aarch64-sim' : 'x86_64';
   let help = false;
   for (const option of options) {
@@ -18,7 +24,8 @@ export function parseMobileArgs(args, arch = process.arch) {
     else if (option.startsWith('--target=')) target = option.slice(9);
     else throw new Error(`未知移动构建选项：${option}`);
   }
-  if (!(platform === 'android' ? androidTargets : iosTargets)[target]) throw new Error(platform === 'android' ? 'Android 目标须为 aarch64、armv7、x86_64 或 i686。' : 'iOS 目标须为模拟器 aarch64-sim 或 x86_64；真机签名请在 Xcode 配置。');
+  if (!(platform === 'android' ? androidTargets : iosTargets)[target]) throw new Error(platform === 'android' ? 'Android 目标须为 aarch64、armv7、x86_64 或 i686。' : 'iOS 目标须为 aarch64、aarch64-sim 或 x86_64。');
+  if (platform === 'ios' && action === 'build' && target === 'aarch64') throw new Error('ios:build 仅导出模拟器包；真机签名请用 npm run ios -- --open 在 Xcode 配置。');
   return { platform, action, target, help };
 }
 
@@ -102,26 +109,33 @@ async function exportAndroid(info, config, env) {
 
 async function exportIos(info, config, env) {
   const candidates = await findArtifacts(join(root, 'src-tauri/gen/apple/build'), '.app');
-  const valid = [];
   const plistValue = (app, key) => run('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, join(app, 'Info.plist')], env, true).trim();
-  for (const app of candidates) {
-    try {
-      if (plistValue(app, 'CFBundleIdentifier') === config.identifier && plistValue(app, 'CFBundleShortVersionString') === config.version && plistValue(app, 'CFBundleSupportedPlatforms:0') === 'iPhoneSimulator') valid.push(app);
-    } catch { /* Exclude stale or non-simulator build directories. */ }
-  }
-  if (valid.length !== 1) throw new Error('未能唯一找到当前版本的 iOS 模拟器应用。');
-  const executable = plistValue(valid[0], 'CFBundleExecutable');
-  if (!/^[A-Za-z0-9._-]+$/.test(executable)) throw new Error('iOS 应用可执行文件名称无效。');
-  const architectures = run('/usr/bin/lipo', ['-archs', join(valid[0], executable)], env, true).trim();
-  if (architectures !== info.arch) throw new Error(`iOS 模拟器架构不匹配，需要 ${info.arch}。`);
+  const app = selectIosArtifact(candidates, { identifier: config.identifier, version: config.version, arch: info.arch }, {
+    plistValue,
+    architectures: executable => run('/usr/bin/lipo', ['-archs', executable], env, true).trim(),
+  });
   const output = join(root, 'release/ios');
   await mkdir(output, { recursive: true });
   const name = `${config.productName}-iOS-${config.version}-${info.target}-simulator.app.zip`;
-  run('/usr/bin/ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', valid[0], join(output, name)], env);
+  run('/usr/bin/ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', app, join(output, name)], env);
   await writeManifest(output, name, { version: config.version, target: info.target, kind: 'ios-simulator-app', signing: 'none', deviceInstallable: false, deviceTest: 'not_run' });
   await writeFile(join(output, 'README-iOS.txt'), `${config.productName} ${config.version} iOS 模拟器构建\n\n解压后将 .app 拖入 Mac 的 iOS Simulator。不能直接安装到 iPhone/iPad。\n真机安装与 TestFlight 分发需要自己的 Apple 开发签名和描述文件，请在 Xcode 配置。\n本构建使用 --no-sign，没有伪造 Apple Team 或签名证书。\n`, 'utf8');
   await copyFile(join(root, 'THIRD_PARTY_NOTICES.md'), join(output, 'THIRD_PARTY_NOTICES.md'));
   process.stdout.write(`iOS 模拟器应用已生成并校验：${join(output, name)}\n`);
+}
+
+export function selectIosArtifact(candidates, expected, { plistValue, architectures }) {
+  const valid = candidates.filter(app => {
+    try {
+      if (plistValue(app, 'CFBundleIdentifier') !== expected.identifier || plistValue(app, 'CFBundleShortVersionString') !== expected.version || plistValue(app, 'CFBundleSupportedPlatforms:0') !== 'iPhoneSimulator') return false;
+      const executable = plistValue(app, 'CFBundleExecutable');
+      if (!/^[A-Za-z0-9._-]+$/.test(executable)) return false;
+      // Another target's normal output is not a duplicate of this target.
+      return architectures(join(app, executable)).trim() === expected.arch;
+    } catch { return false; }
+  });
+  if (valid.length !== 1) throw new Error(`未能唯一找到当前版本、包名与 ${expected.arch} 架构的 iOS 模拟器应用。`);
+  return valid[0];
 }
 
 async function writeManifest(output, name, metadata) {
@@ -133,11 +147,11 @@ async function writeManifest(output, name, metadata) {
 async function main() {
   const options = parseMobileArgs(process.argv.slice(2));
   if (options.help) {
-    process.stdout.write('用法：npm run android:init / android:build / android:check / android\n      npm run ios:init / ios:build / ios:check / ios\nAndroid 默认生成 arm64 debug 测试 APK，可用 --target=x86_64 等切换架构。\niOS 默认生成当前 Mac 架构的模拟器应用，可用 --target=aarch64-sim 或 --target=x86_64。\n构建前需先 init；脚本不会自动安装 SDK、Rust 目标或接受许可。\n');
+    process.stdout.write('用法：npm run android:init / android:build / android:check / android\n      npm run ios:init / ios:build / ios:check / ios\nAndroid build 默认生成 arm64 debug 测试 APK，可用 --target=x86_64 等切换架构。\niOS build 默认生成当前 Mac 架构的模拟器应用，可用 --target=aarch64-sim 或 --target=x86_64。\n交互调试：npm run ios -- --open（Xcode）或 npm run android -- --open（Android Studio）。保持终端运行；真机签名在 Xcode 配置。\n调试参数直接传给 Tauri，可使用设备名称、--host 等选项；调试不使用 --target。例如 npm run ios -- "iPhone 17"。\niOS 真机环境检查：npm run ios:check -- --target=aarch64。模拟器 Runtime 只在运行模拟器时需要，初始化及编译不要求安装。\n构建前需先 init；脚本不会自动安装 SDK、Rust 目标或接受许可。\n');
     return;
   }
   const env = mobileEnvironment(root);
-  const info = (options.platform === 'android' ? androidPreflight : iosPreflight)({ target: options.target, env });
+  const info = (options.platform === 'android' ? androidPreflight : iosPreflight)({ target: options.target, action: options.action, env });
   if (options.action === 'check') { process.stdout.write(`${options.platform} ${options.target} 构建环境检查通过。\n`); return; }
   const config = JSON.parse(await readFile(join(root, 'src-tauri/tauri.conf.json'), 'utf8'));
   const packageInfo = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
@@ -145,7 +159,7 @@ async function main() {
   const tauri = join(root, 'node_modules/@tauri-apps/cli/tauri.js');
   const project = join(root, 'src-tauri/gen', options.platform === 'android' ? 'android' : 'apple');
   if (options.action === 'init') {
-    if (existsSync(project) && (await readdir(project)).length) throw new Error(`原生工程已存在：${project}。请直接运行 ${options.platform}:build，避免覆盖本地修改。`);
+    if (existsSync(project) && (await readdir(project)).length) throw new Error(`原生工程已存在：${project}。请直接运行 npm run ${options.platform} 调试或 ${options.platform}:build 构建，避免覆盖本地修改。`);
     run(process.execPath, [tauri, options.platform, 'init', '--ci', '--skip-targets-install'], env);
     if (options.platform === 'android') await prepareAndroidProject(project);
     process.stdout.write(`${options.platform} 原生工程已初始化。\n`);
@@ -154,11 +168,12 @@ async function main() {
   if (!existsSync(project) || !(await stat(project)).isDirectory()) throw new Error(`请先运行 npm run ${options.platform}:init。`);
   if (options.platform === 'android') await prepareAndroidProject(project);
   if (options.action === 'dev') {
-    run(process.execPath, [tauri, options.platform, 'dev'], env);
+    run(process.execPath, [tauri, options.platform, 'dev', ...options.devArgs], env);
     return;
   }
   const args = [tauri, options.platform, 'build', '--debug', '--target', options.target, '--ci'];
   args.push(options.platform === 'android' ? '--apk' : '--no-sign');
+  args.push('--', '--locked');
   const buildEnv = mobileBuildEnvironment(options.platform, env);
   run(process.execPath, args, buildEnv);
   await (options.platform === 'android' ? exportAndroid : exportIos)(info, config, buildEnv);

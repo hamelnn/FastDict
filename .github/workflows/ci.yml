@@ -17,8 +17,8 @@ jobs:
     name: Frontend tests and production build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22'
           cache: npm
@@ -36,25 +36,29 @@ jobs:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22'
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: './src-tauri -> target'
       - run: npm ci
+      - name: Verify platform build entry points (including Windows-only cases)
+        run: npm run test:scripts
       - name: Check Rust and platform dependencies
-        run: cargo check --manifest-path src-tauri/Cargo.toml
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
       - name: Verify native screenshot encoding
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
       # Tauri runs the frontend build once through beforeBuildCommand.
       # Compile without publishing releases, packaging, or requiring signing keys.
       # See https://v2.tauri.app/distribute/pipelines/github/ and tauri-action README.
       - name: Build native app
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         with:
           tauriScript: npm run tauri
-          args: --no-bundle
+          args: --no-bundle -- --locked

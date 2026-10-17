@@ -1,5 +1,7 @@
 # iOS 与 Android
 
+0.5.0 新增随系统变化的纯白 / 纯黑主题及可编辑翻译提示词。设置首页保留常用选项，OCR、预热和选图说明在“高级设置”；手机仍使用 API 翻译。本次准备发布 Android ARM64 debug APK 与 iOS ARM64 / Intel 模拟器 ZIP，见 [0.5.0 下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.5.0)，以实际附件与构建记录为准。本节以下的 0.2.0 发布验收记录不代表新版本真机复测。
+
 0.2.0 增加独立手机布局和原生移动接口，复用桌面的本地 OCR、翻译协议、多服务配置与历史记录。
 
 ## 使用
@@ -32,15 +34,15 @@ npm run android:init
 npm run android:build
 ```
 
-`npm run android` 用于原生开发。构建默认为 ARM64 debug APK，输出 `release/android/`，同时校验包名、版本、架构和签名并生成 SHA-256 清单。模拟器可按其架构传 `-- --target=x86_64`。初始化不会覆盖已有原生工程，脚本不会自行安装 SDK。
+`npm run android` 用于原生开发，由 Tauri 选择设备；`npm run android -- --open` 打开 Android Studio，保持终端进程运行。交互调试支持设备名称及 `--host` 等 Tauri 参数，不再接受会被忽略的 `--target`。构建默认为 ARM64 debug APK，输出 `release/android/`，同时校验包名、版本、架构和签名并生成 SHA-256 清单。为模拟器打包时可用 `npm run android:build -- --target=x86_64`。初始化不会覆盖已有原生工程，脚本不会自行安装 SDK。
 
 `android:build` 保留 Android debug 签名，同时仅在打包子进程中将 Rust dev profile 设为 `debug=0`、`strip=symbols`、`opt-level=s`，减小原生库体积；清单记为 `rustProfile: optimized-dev`。`npm run android` 的交互调试与 iOS / 桌面构建不受此设置影响。
 
-GitHub Actions 可手动运行 **Build Android test APK**。下载该次运行的产物，解压后安装 `.apk`。Debug 签名仅供测试；不同构建环境的签名可能不同，可能无法直接覆盖安装。正式商店分发需要固定发行密钥。
+GitHub Actions 的 **Build Android test APK** 在移动相关源码、原生配置、构建脚本或锁文件变更时自动编译；手动运行才上传测试包。下载该次手动运行的产物，解压后安装 `.apk`。构建使用 `--locked`。Debug 签名仅供测试；不同构建环境的签名可能不同，可能无法直接覆盖安装。正式商店分发需要固定发行密钥。
 
 ## iOS 构建
 
-运行最低 iOS 15。需要 Mac、完整 Xcode 与 iOS Simulator runtime、CocoaPods、Node.js 和 Rust。Apple Silicon 安装 `aarch64-apple-ios-sim` Rust target，Intel 安装 `x86_64-apple-ios`。
+运行最低 iOS 15。需要 Mac、完整 Xcode 与相应 iOS SDK、CocoaPods、Node.js 和 Rust。编译模拟器应用时，Apple Silicon 安装 `aarch64-apple-ios-sim` Rust target，Intel 安装 `x86_64-apple-ios`；启动模拟器还需安装 Simulator runtime。初始化工程和编译不再强制要求可启动的模拟器 runtime。
 
 ```sh
 npm ci
@@ -49,7 +51,20 @@ npm run ios:init
 npm run ios:build
 ```
 
-默认生成与当前 Mac 架构对应的无签名模拟器应用，输出 `release/ios/*.app.zip` 与校验清单。解压后将 `.app` 拖入已启动的 iOS Simulator。也可手动运行 **Build iOS simulator app** 工作流下载产物。
+默认生成与当前 Mac 架构对应的无签名模拟器应用，输出 `release/ios/*.app.zip` 与校验清单。导出会先核对包名、版本、模拟器平台与架构，再检查候选是否唯一，因此同一工作区可保留 ARM64 和 Intel 两种输出。构建使用 `--locked`。解压后将 `.app` 拖入已启动的 iOS Simulator。
+
+交互调试使用 `npm run ios`，由 Tauri 选择模拟器或连接的 iPhone。首次执行 `npm run ios:init` 后，可用以下方式打开 Xcode；保持终端运行，在 Xcode 选择设备、自己的签名 Team 与自动签名，再运行应用：
+
+```sh
+# 真机编译目标；只需安装一次
+rustup target add aarch64-apple-ios
+npm run ios:check -- --target=aarch64
+npm run ios -- --open
+```
+
+`npm run ios -- --open` 支持官方设备与网络选项（例如 `--host`），不要求先安装无关的模拟器架构。`ios:build` 仍仅导出模拟器包，不生成已签名的真机 IPA。以上入口已通过脚本测试，新的 Xcode 调试路径尚未在 Mac / iPhone 验收。
+
+**Build iOS simulator app** 在移动相关变更时自动编译，连续构建两种模拟器架构；手动运行还会启动当前主机架构的临时模拟器并上传产物。脚本夹具覆盖双架构残留、同架构重复、旧版本、损坏 plist 和真机包；Windows 上通过这些夹具不代表已在 Xcode 执行构建或完成设备验收。
 
 模拟器包不能安装到 iPhone / iPad。真机安装需在生成的 Xcode 工程里配置自己的 Apple Team 与签名；TestFlight / App Store 另需发行配置。当前工作流不上传商店。
 

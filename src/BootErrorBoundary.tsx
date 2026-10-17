@@ -17,7 +17,7 @@ export async function quitApplication(): Promise<void> {
   if (isMobile) throw new Error('请使用系统手势离开应用。');
   const bridge = (window as unknown as { __TAURI_INTERNALS__?: { invoke: (command: string) => Promise<unknown> } }).__TAURI_INTERNALS__;
   if (!bridge) throw new Error('退出应用仅在桌面版中可用。');
-  await bridge.invoke('quit_app');
+  await bridge.invoke(new URLSearchParams(location.search).has('capture') ? 'recover_capture' : 'quit_app');
 }
 
 export function BootMounted({ children }: PropsWithChildren) {
@@ -34,6 +34,6 @@ export default class BootErrorBoundary extends Component<PropsWithChildren, { fa
   }
   render() {
     if (!this.state.failed) return this.props.children;
-    return <section className="boot-surface" role="alert"><div className="boot-card"><div className="boot-brand">FASTLINGO</div><h2>应用界面未能启动</h2><p>可重新加载界面。现有配置、历史和密钥没有被清除。</p><div className="boot-actions"><button onClick={() => window.location.reload()}>重新加载</button>{!isMobile && <button onClick={() => {void quitApplication().catch(() => window.__FASTD_BOOT__?.fail('unhandled-error'));}}>退出应用</button>}</div>{isMobile ? <p className="boot-stage">可使用系统手势离开应用后重新打开。</p> : isNative && <p className="boot-stage">{isNativeMac ? '⌘Q 退出应用；⌥⌘Q 可立即退出。' : `${shortcutLabels.emergencyQuit} 可立即退出应用。`}</p>}</div></section>;
+    return <section className="boot-surface" role="alert"><div className="boot-card"><div className="boot-brand">FASTLINGO</div><h2>应用界面未能启动</h2><p>可重新加载界面。现有配置、历史和密钥没有被清除。</p><div className="boot-actions"><button onClick={() => window.location.reload()}>重新加载</button>{!isMobile && <button onClick={() => {void quitApplication().catch(() => window.__FASTD_BOOT__?.fail('unhandled-error'));}}>{new URLSearchParams(location.search).has('capture') ? '取消截图' : '退出应用'}</button>}</div>{isMobile ? <p className="boot-stage">可使用系统手势离开应用后重新打开。</p> : isNative && <p className="boot-stage">{isNativeMac ? '⌘Q 退出应用；⌥⌘Q 可立即退出。' : `${shortcutLabels.emergencyQuit} 可立即退出应用。`}</p>}</div></section>;
   }
 }

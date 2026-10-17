@@ -3,17 +3,21 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"/>
-  <meta name="theme-color" content="#f8faf8"/>
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)"/>
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)"/>
+  <meta name="color-scheme" content="light dark"/>
   <meta name="description" content="FastLingo — 随手捕获，即刻理解。截图 OCR 与流式 AI 翻译。"/>
   <title>FastLingo</title>
   <style>
-    .boot-surface{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:#f8faf8;font-family:'Microsoft YaHei',system-ui,sans-serif;color:#273c35;padding:28px;box-sizing:border-box}
-    .boot-surface[hidden]{display:none}.boot-card{max-width:470px;width:100%;background:#fff;border:1px solid #e0e9df;border-radius:15px;padding:30px;box-shadow:0 10px 35px #273c3508}.boot-brand{font-size:13px;letter-spacing:2px;color:#799271;margin:0 0 20px}.boot-card h1,.boot-card h2{font-size:22px;margin:0 0 13px;font-weight:600}.boot-card p{font-size:13px;line-height:1.8;margin:0;color:#7c8e74}.boot-actions{display:flex;gap:10px;margin-top:24px}.boot-actions button{border:1px solid #d9e4d5;background:#fff;color:#526e47;font:inherit;font-size:13px;border-radius:7px;padding:10px 17px;min-height:44px;cursor:pointer}.boot-actions button:first-child{background:#29694f;color:#fff;border-color:#29694f}.boot-stage{font-size:11px!important;opacity:.7;margin-top:17px!important;overflow-wrap:anywhere}
+    :root{color-scheme:light dark;--boot-bg:#fff;--boot-fg:#111;--boot-muted:#666;--boot-border:#e5e5e5}
+    @media(prefers-color-scheme:dark){:root{--boot-bg:#000;--boot-fg:#f5f5f5;--boot-muted:#a3a3a3;--boot-border:#292929}}
+    .boot-surface{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:var(--boot-bg);font-family:system-ui,'Microsoft YaHei',sans-serif;color:var(--boot-fg);padding:28px;box-sizing:border-box}
+    .boot-surface[hidden]{display:none}.boot-card{max-width:420px;width:100%;background:var(--boot-bg);border:1px solid var(--boot-border);border-radius:12px;padding:28px}.boot-brand{font-size:12px;letter-spacing:1px;color:var(--boot-muted);margin:0 0 20px}.boot-card h1,.boot-card h2{font-size:21px;margin:0 0 12px;font-weight:600}.boot-card p{font-size:13px;line-height:1.7;margin:0;color:var(--boot-muted)}.boot-actions{display:flex;gap:10px;margin-top:24px}.boot-actions button{border:1px solid var(--boot-border);background:var(--boot-bg);color:var(--boot-fg);font:inherit;font-size:13px;border-radius:7px;padding:10px 17px;min-height:44px;cursor:pointer}.boot-actions button:first-child{background:var(--boot-fg);color:var(--boot-bg);border-color:var(--boot-fg)}.boot-stage{font-size:11px!important;opacity:.7;margin-top:17px!important;overflow-wrap:anywhere}
   </style>
 </head>
 <body>
   <section id="fastdict-boot" class="boot-surface" aria-label="正在启动FastLingo">
-    <div class="boot-card"><div class="boot-brand">FASTLINGO</div><h1>正在启动FastLingo</h1><p>正在加载本地界面。你的配置和翻译记录会保留。</p><div class="boot-actions"><button type="button" data-boot-quit>退出应用</button><button type="button" data-mobile-retry hidden>重新加载</button></div><p class="boot-stage" data-boot-shortcuts hidden>Ctrl + Alt + Q 可立即退出应用。</p><p id="fastdict-boot-status" class="boot-stage"></p></div>
+    <div class="boot-card"><div class="boot-brand">FASTLINGO</div><h1>正在启动FastLingo</h1><div class="boot-actions"><button type="button" data-boot-quit>退出应用</button><button type="button" data-mobile-retry hidden>重新加载</button></div><p class="boot-stage" data-boot-shortcuts hidden>Ctrl + Alt + Q 可立即退出应用。</p><p id="fastdict-boot-status" class="boot-stage"></p></div>
   </section>
   <section id="fastdict-boot-error" class="boot-surface" role="alert" hidden>
     <div class="boot-card"><div class="boot-brand">FASTLINGO</div><h2>应用界面未能启动</h2><p>可重新加载界面，或退出后重新打开。现有配置、历史和密钥没有被清除。</p><div class="boot-actions"><button type="button" id="fastdict-boot-retry">重新加载</button><button type="button" data-boot-quit>退出应用</button></div><p class="boot-stage" data-boot-shortcuts hidden>Ctrl + Alt + Q 可立即退出应用。</p><p id="fastdict-boot-stage" class="boot-stage"></p></div>
@@ -24,6 +28,7 @@
       // This recovery shell is independent of React and its imported chunks.
       var allowed = ['bootstrap-start','bootstrap-import-failed','react-render-failed','storage-read-failed','storage-write-failed','unhandled-error','unhandled-rejection','bootstrap-timeout'];
       var capture = new URLSearchParams(window.location.search).has('capture');
+      if (capture) document.querySelectorAll('[data-boot-quit]').forEach(function (button) { button.textContent = '取消截图'; });
       // This small fallback must identify Mac before any application module can load.
       var native = !!window.__TAURI_INTERNALS__;
       var mobile = /Android|iPhone|iPad|iPod/.test(navigator.userAgent) || (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1);
@@ -43,11 +48,11 @@
       }
       var failed = false, mounted = false, timer;
       function report(stage) {
-        if (capture || mobile || allowed.indexOf(stage) < 0) return;
+        if (mobile || allowed.indexOf(stage) < 0) return;
         var bridge = window.__TAURI_INTERNALS__;
         if (!bridge || typeof bridge.invoke !== 'function') return;
         try {
-          Promise.resolve(bridge.invoke('report_boot_error', {stage:stage})).catch(function () {
+          Promise.resolve(bridge.invoke(capture ? 'capture_boot_error' : 'report_boot_error', {stage:stage})).catch(function () {
             document.getElementById('fastdict-boot-status').textContent = '无法写入启动诊断，请使用窗口关闭按钮退出。';
           });
         } catch (_) {
@@ -76,7 +81,7 @@
           return;
         }
         try {
-          Promise.resolve(bridge.invoke('quit_app')).catch(function () {
+          Promise.resolve(bridge.invoke(capture ? 'recover_capture' : 'quit_app')).catch(function () {
             document.getElementById('fastdict-boot-stage').textContent = '退出请求未完成，请使用窗口关闭按钮。';
           });
         } catch (_) {

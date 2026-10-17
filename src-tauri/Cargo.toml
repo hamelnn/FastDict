@@ -1,6 +1,6 @@
 [package]
 name = "fastdict"
-version = "0.4.0"
+version = "0.5.0"
 description = "A lightweight screenshot and clipboard translator"
 authors = ["FastLingo"]
 edition = "2021"
@@ -52,3 +52,6 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }

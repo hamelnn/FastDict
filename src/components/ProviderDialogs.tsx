@@ -6,6 +6,8 @@ import { isMobile, isNative, isNativeMac, operatingSystem } from '../lib/platfor
 import { validateEndpoint } from '../lib/translation';
 import type { CodexStatus } from '../lib/codex';
 import { acknowledgeChatGPTPlan, hasAcknowledgedChatGPTPlan } from '../lib/storage';
+import { createId } from '../lib/id';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 
 const desktopCodex = isNative && !isMobile;
 const desktopOnly = 'ChatGPT 订阅翻译仅支持桌面应用，请在 Windows 或 macOS 版使用。';
@@ -25,6 +27,7 @@ export function ProviderPresets({
   onClose: () => void;
   onChoose: (provider: Provider) => void;
 }) {
+  const dialogRef = useDialogFocus<HTMLElement>();
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -36,6 +39,8 @@ export function ProviderPresets({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <section
+        ref={dialogRef}
+        tabIndex={-1}
         className="modal preset-modal"
         role="dialog"
         aria-modal="true"
@@ -55,7 +60,7 @@ export function ProviderPresets({
           {PROVIDER_PRESETS.filter(preset => preset.kind !== 'codex' || desktopCodex).map((preset) => (
             <button
               key={preset.name}
-              onClick={() => onChoose({ ...preset, id: crypto.randomUUID(), hasKey: false })}
+              onClick={() => onChoose({ ...preset, id: createId(), hasKey: false })}
             >
               <span className={`provider-avatar provider-${preset.kind}`}>{preset.name.slice(0, 1)}</span>
               <span>
@@ -89,6 +94,7 @@ interface EditorProps {
 }
 
 export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, onCodexStatus }: EditorProps) {
+  const dialogRef = useDialogFocus<HTMLFormElement>(isMobile ? undefined : 'input');
   const [draft, setDraft] = useState(provider);
   const [key, setKey] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -98,34 +104,65 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [checking, setChecking] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
+  const [cancellingSignIn, setCancellingSignIn] = useState(false);
+  const [confirmForget, setConfirmForget] = useState(false);
   const [showPlanNotice, setShowPlanNotice] = useState(false);
   const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
   const [availableModels, setAvailableModels] = useState<NonNullable<CodexStatus['models']>>([]);
   const [availableProfiles, setAvailableProfiles] = useState<NonNullable<CodexStatus['profiles']>>([]);
   const checkRef = useRef(0);
   const signInRef = useRef(false);
+  const signInPending = useRef<Promise<CodexStatus> | null>(null);
+  const mountedRef = useRef(true);
   const previousSignInStatus = useRef<CodexStatus | null>(null);
   const codex = draft.kind === 'codex';
   const unsupportedCodex = codex && !desktopCodex;
-  const cancelSignIn = () => {
-    ++checkRef.current;
+  const applyStatus = (status: CodexStatus) => {
+    setCodexStatus(status);
+    setAvailableModels(status.models || []);
+    setAvailableProfiles(status.profiles || []);
+    onCodexStatus?.(draft, status);
+  };
+  const cancelSignIn = async () => {
+    const request = ++checkRef.current;
     setChecking(false);
-    setSigningIn(false);
     if (signInRef.current) {
       signInRef.current = false;
-      setCodexStatus(previousSignInStatus.current);
-      setAvailableModels(previousSignInStatus.current?.models || []);
-      onCodexStatus?.(draft, previousSignInStatus.current);
-      void import('../lib/codex').then(({ cancelChatGPTSignIn }) => cancelChatGPTSignIn()).catch(() => undefined);
+      setCancellingSignIn(true);
+      try {
+        const { cancelChatGPTSignIn } = await import('../lib/codex');
+        const status = await cancelChatGPTSignIn();
+        // Let the account-change guard finish before enabling another sign-in.
+        await signInPending.current?.catch(() => undefined);
+        if (mountedRef.current && request === checkRef.current) applyStatus(status);
+      } catch (cause) {
+        if (mountedRef.current && request === checkRef.current) {
+          setCodexStatus(null);
+          onCodexStatus?.(draft, null);
+          setError(cause instanceof Error ? cause.message : String(cause));
+        }
+      } finally {
+        if (mountedRef.current && request === checkRef.current) {
+          setSigningIn(false);
+          setCancellingSignIn(false);
+        }
+      }
+    } else {
+      setSigningIn(false);
     }
   };
-  useEffect(() => () => {
+  const closeEditor = async () => {
+    await cancelSignIn();
+    if (mountedRef.current) onClose();
+  };
+  useEffect(() => { mountedRef.current = true; return () => {
+    mountedRef.current = false;
     ++checkRef.current;
     if (signInRef.current) {
       signInRef.current = false;
       void import('../lib/codex').then(({ cancelChatGPTSignIn }) => cancelChatGPTSignIn()).catch(() => undefined);
     }
-  }, []);
+  }; }, []);
   const checkCodex = async () => {
     const request = ++checkRef.current;
     setChecking(true);
@@ -148,6 +185,7 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
     }
   };
   const signIn = async (newAccount = false) => {
+    let committed = false;
     const request = ++checkRef.current;
     setSigningIn(true);
     signInRef.current = true;
@@ -158,30 +196,61 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
     onCodexStatus?.(draft, null);
     try {
       if (!draft.model.trim()) throw new Error('请填写模型名称。');
-      const { signInChatGPT } = await import('../lib/codex');
+      const { signInChatGPT, getCodexStatus } = await import('../lib/codex');
       if (request !== checkRef.current) return;
-      const status = await signInChatGPT(draft.model.trim(), newAccount);
+      const pending = signInChatGPT(draft.model.trim(), newAccount);
+      signInPending.current = pending;
+      const status = await pending;
       if (request !== checkRef.current) return;
-      setCodexStatus(status);
-      setAvailableModels(status.models || []);
-      setAvailableProfiles(status.profiles || []);
-      onCodexStatus?.(draft, status);
+      committed = true;
+      signInRef.current = false;
+      setSigningIn(false);
+      applyStatus(status);
       if (status.connected && status.planEnabled && !hasAcknowledgedChatGPTPlan()) setShowPlanNotice(true);
+      // Signing in is already complete. Catalog latency must never leave a
+      // committed connection behind a misleading "cancel sign-in" action.
+      if (status.connected && status.planEnabled) {
+        setChecking(true);
+        const catalog = await getCodexStatus(draft.model.trim());
+        if (request === checkRef.current) applyStatus(catalog);
+      }
     } catch (cause) {
       if (request === checkRef.current) {
         setError(cause instanceof Error ? cause.message : String(cause));
-        setCodexStatus(previousSignInStatus.current);
-        setAvailableModels(previousSignInStatus.current?.models || []);
-        onCodexStatus?.(draft, previousSignInStatus.current);
+        if (!committed) {
+          setCodexStatus(previousSignInStatus.current);
+          setAvailableModels(previousSignInStatus.current?.models || []);
+          setAvailableProfiles(previousSignInStatus.current?.profiles || []);
+          onCodexStatus?.(draft, previousSignInStatus.current);
+        }
       }
     } finally {
       if (request === checkRef.current) {
         signInRef.current = false;
         setSigningIn(false);
+        setChecking(false);
       }
     }
   };
+  const forgetProfile = async () => {
+    const profile = availableProfiles.find(item => item.active);
+    if (!profile) return;
+    if (!confirmForget) { setConfirmForget(true); return; }
+    const request = ++checkRef.current;
+    setChecking(true); setError('');
+    onCodexStatus?.(draft, null);
+    try {
+      const { forgetChatGPTProfile } = await import('../lib/codex');
+      const status = await forgetChatGPTProfile(profile.id, draft.model.trim());
+      if (request === checkRef.current) { applyStatus(status); setConfirmForget(false); }
+    } catch (cause) {
+      if (request === checkRef.current) setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (request === checkRef.current) setChecking(false);
+    }
+  };
   const selectProfile = async (profileId: string) => {
+    setConfirmForget(false);
     const request = ++checkRef.current;
     const previous = codexStatus;
     setChecking(true);
@@ -268,20 +337,22 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
   };
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !saving) onClose();
+      if (event.key === 'Escape' && !saving && !cancellingSignIn) void closeEditor();
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [onClose, saving]);
+  }, [onClose, saving, cancellingSignIn]);
 
   return (
     <div
       className="modal-backdrop"
       onClick={() => {
-        if (!saving) onClose();
+        if (!saving && !cancellingSignIn) void closeEditor();
       }}
     >
       <form
+        ref={dialogRef}
+        tabIndex={-1}
         className="modal provider-modal"
         role="dialog"
         aria-modal="true"
@@ -300,8 +371,8 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
             className="icon-button"
             type="button"
             aria-label="关闭配置"
-            onClick={onClose}
-            disabled={saving}
+            onClick={() => { void closeEditor(); }}
+            disabled={saving || cancellingSignIn}
           >
             <X size={20} />
           </button>
@@ -309,7 +380,6 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
         <label className="form-label">
           服务名称
           <input
-            autoFocus={!isMobile}
             autoCapitalize="none"
             autoCorrect="off"
             value={draft.name}
@@ -350,12 +420,13 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
             autoCorrect="off"
             spellCheck={false}
             value={draft.model}
+            disabled={signingIn || cancellingSignIn}
             list={codex ? 'chatgpt-available-models' : undefined}
             onChange={(event) => {
               const next = { ...draft, model: event.target.value };
               setDraft(next);
               if (codex) {
-                cancelSignIn();
+                void cancelSignIn();
                 setCodexStatus(null);
                 setShowPlanNotice(false);
                 setError('');
@@ -381,7 +452,7 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
             </label>}
             {signingIn ? <div className="chatgpt-actions">
               <span role="status"><LoaderCircle size={15} className="spin" /> 请在系统浏览器中完成 ChatGPT 登录和授权…</span>
-              <button className="button secondary small" type="button" onClick={cancelSignIn}>取消登录</button>
+              <button className="button secondary small" type="button" disabled={cancellingSignIn} onClick={() => { void cancelSignIn(); }}>{cancellingSignIn ? '正在确认连接' : '取消登录'}</button>
             </div> : <div className="chatgpt-actions">
               {!codexStatus?.connected && <button className="button chatgpt-sign-in" type="button" disabled={checking || saving || unsupportedCodex} onClick={() => { void signIn(); }}>Continue with ChatGPT</button>}
               <button className="button secondary small" type="button" disabled={checking || saving || unsupportedCodex} onClick={() => { void checkCodex(); }}>
@@ -392,9 +463,11 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
                 <button className="text-button danger" type="button" disabled={checking || saving} onClick={() => { void disconnect(); }}>断开连接</button>
               </>}
               {availableProfiles.length > 0 && <button className="text-button" type="button" disabled={checking || saving} onClick={() => { void signIn(true); }}>添加账号</button>}
+              {availableProfiles.length > 0 && <button className="text-button danger" type="button" disabled={checking || saving || !availableProfiles.some(profile => profile.active)} onClick={() => { void forgetProfile(); }}>{confirmForget ? '确认忘记此连接' : '忘记此连接'}</button>}
               {!unsupportedCodex && <button className="text-button" type="button" onClick={() => { void openUsage(); }}>管理用量</button>}
             </div>}
             {codexStatus && <p className="codex-status" role="status">{codexStatusMessage(codexStatus)}</p>}
+            {confirmForget && <small>将撤销此连接的登录并移除本机注册记录；以后使用需要重新授权，其他账号会保留。</small>}
             {!unsupportedCodex && <small>刷新仅检查连接、授权和可用模型，不发送翻译请求。译文会逐步显示。</small>}
             {showPlanNotice && <div className="chatgpt-plan-notice" role="alertdialog" aria-modal="true" aria-label="正在使用 ChatGPT 套餐">
               <strong>正在使用 ChatGPT 套餐</strong>
@@ -473,7 +546,7 @@ export function ProviderEditor({ provider, existing, onClose, onSave, onRemove, 
             </button>
           )}
           <div>
-            <button className="button secondary" type="button" onClick={onClose} disabled={saving}>
+            <button className="button secondary" type="button" onClick={() => { void closeEditor(); }} disabled={saving || cancellingSignIn}>
               取消
             </button>
             <button className="button primary" type="submit" disabled={saving || checking || signingIn || showPlanNotice || unsupportedCodex}>

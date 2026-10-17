@@ -39,11 +39,12 @@ fn validate_api_key(api_key: &str) -> Result<(), String> {
     Ok(())
 }
 
-async fn vault_task<T, F>(work: F) -> Result<T, String>
+async fn vault_task<T, F>(window_label: &str, work: F) -> Result<T, String>
 where
     T: Send + 'static,
     F: FnOnce() -> Result<T, String> + Send + 'static,
 {
+    crate::ipc_access::require_main_label(window_label)?;
     // Credential prompts and OS IPC must never block the WebView's UI thread.
     tauri::async_runtime::spawn_blocking(work)
         .await
@@ -51,12 +52,13 @@ where
 }
 
 #[tauri::command]
-pub async fn save_api_key(app: tauri::AppHandle, provider_id: String, api_key: String) -> Result<(), String> {
+pub async fn save_api_key(app: tauri::AppHandle, window: tauri::WebviewWindow, provider_id: String, api_key: String) -> Result<(), String> {
+    crate::ipc_access::require_main(&window)?;
     validate_provider_id(&provider_id)?;
     validate_api_key(&api_key)?;
     #[cfg(not(target_os = "android"))]
     let _ = app;
-    vault_task(move || {
+    vault_task(window.label(), move || {
         #[cfg(target_os = "android")]
         { app.state::<tauri_plugin_fastdict_mobile::Mobile<tauri::Wry>>().save_key(provider_id, api_key) }
         #[cfg(any(target_os = "windows", target_os = "macos", target_os = "ios"))]
@@ -86,11 +88,12 @@ pub async fn save_api_key(app: tauri::AppHandle, provider_id: String, api_key: S
 }
 
 #[tauri::command]
-pub async fn get_api_key(app: tauri::AppHandle, provider_id: String) -> Result<Option<String>, String> {
+pub async fn get_api_key(app: tauri::AppHandle, window: tauri::WebviewWindow, provider_id: String) -> Result<Option<String>, String> {
+    crate::ipc_access::require_main(&window)?;
     validate_provider_id(&provider_id)?;
     #[cfg(not(target_os = "android"))]
     let _ = app;
-    vault_task(move || {
+    vault_task(window.label(), move || {
         #[cfg(target_os = "android")]
         { app.state::<tauri_plugin_fastdict_mobile::Mobile<tauri::Wry>>().get_key(provider_id) }
         #[cfg(any(target_os = "windows", target_os = "macos", target_os = "ios"))]
@@ -120,11 +123,12 @@ pub async fn get_api_key(app: tauri::AppHandle, provider_id: String) -> Result<O
 }
 
 #[tauri::command]
-pub async fn delete_api_key(app: tauri::AppHandle, provider_id: String) -> Result<(), String> {
+pub async fn delete_api_key(app: tauri::AppHandle, window: tauri::WebviewWindow, provider_id: String) -> Result<(), String> {
+    crate::ipc_access::require_main(&window)?;
     validate_provider_id(&provider_id)?;
     #[cfg(not(target_os = "android"))]
     let _ = app;
-    vault_task(move || {
+    vault_task(window.label(), move || {
         #[cfg(target_os = "android")]
         { app.state::<tauri_plugin_fastdict_mobile::Mobile<tauri::Wry>>().delete_key(provider_id) }
         #[cfg(any(target_os = "windows", target_os = "macos", target_os = "ios"))]
@@ -150,4 +154,25 @@ pub async fn delete_api_key(app: tauri::AppHandle, provider_id: String) -> Resul
         }
     })
     .await
+}
+
+#[cfg(all(test, desktop))]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn denied_renderers_never_reach_the_vault_worker() {
+        use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+        let touched = Arc::new(AtomicUsize::new(0));
+        for label in ["capture", "other"] {
+            for _operation in ["get", "save", "delete"] {
+                let counter = touched.clone();
+                let result = vault_task(label, move || { counter.fetch_add(1, Ordering::SeqCst); Ok("synthetic") }).await;
+                assert!(result.is_err());
+            }
+        }
+        assert_eq!(touched.load(Ordering::SeqCst), 0);
+        let counter = touched.clone();
+        assert_eq!(vault_task("main", move || { counter.fetch_add(1, Ordering::SeqCst); Ok("synthetic") }).await.unwrap(), "synthetic");
+        assert_eq!(touched.load(Ordering::SeqCst), 1);
+    }
 }

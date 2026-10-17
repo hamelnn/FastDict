@@ -141,37 +141,71 @@ export async function openScreenPermissionSettings(): Promise<void> {
 }
 
 /** Browser fallback: return one frame and stop sharing immediately. */
-export async function captureDisplay(): Promise<Screenshot> {
+export async function captureDisplay(signal?: AbortSignal): Promise<Screenshot> {
   if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('当前浏览器不支持屏幕截图，请导入图片或使用桌面应用。');
-  let stream: MediaStream;
-  try { stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false }); }
-  catch (error) {
-    if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'AbortError')) throw new DOMException('已取消截图。', 'AbortError');
-    throw new Error('无法获取屏幕图像，请导入图片或使用桌面应用。');
-  }
-  const video = document.createElement('video');
-  video.muted = true;
-  video.playsInline = true;
-  video.srcObject = stream;
+  const cancelled = () => new DOMException('已取消截图。', 'AbortError');
+  if (signal?.aborted) throw cancelled();
+  let stream: MediaStream | undefined, video: HTMLVideoElement | undefined;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let finished = false, failure: Error | undefined;
+  const cleanups: Array<() => void> = [];
+  let reject!: (error: Error) => void;
+  const failed = new Promise<never>((_, fail) => { reject = fail; });
+  void failed.catch(() => undefined);
+  const stopTracks = (captured?: MediaStream) => { for (const track of captured?.getTracks() || []) track.stop(); };
+  const release = () => {
+    for (const cleanup of cleanups.splice(0)) cleanup();
+    stopTracks(stream);
+    if (video) { video.pause(); video.srcObject = null; }
+  };
+  const fail = (error: Error) => {
+    if (finished || failure) return;
+    failure = error;
+    release();
+    reject(error);
+  };
+  const abort = () => fail(cancelled());
+  const wait = async <T>(pending: Promise<T>): Promise<T> => {
+    void pending.catch(() => undefined);
+    if (failure) throw failure;
+    const result = await Promise.race([pending, failed]);
+    if (failure) throw failure;
+    return result;
+  };
+  signal?.addEventListener('abort', abort, { once: true });
   try {
-    await video.play();
-    await new Promise<void>((resolve, reject) => {
-      let settled = false;
-      const finish = (error?: Error) => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(timeout);
-        video.removeEventListener('loadeddata', ready);
-        video.removeEventListener('error', failed);
-        if (error) reject(error); else resolve();
-      };
-      const ready = () => finish();
-      const failed = () => finish(new Error('读取屏幕图像失败。'));
-      const timeout = window.setTimeout(() => finish(new Error('读取屏幕图像超时，请重试。')), 10_000);
-      video.addEventListener('loadeddata', ready, { once: true });
-      video.addEventListener('error', failed, { once: true });
-      if (video.readyState >= 2 && video.videoWidth > 0) ready();
-    });
+    const selecting = navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    // The system picker itself cannot be dismissed through this API. A stream
+    // granted after Stop must still be stopped before any video sees it.
+    void selecting.then(captured => { if (finished || failure || signal?.aborted) stopTracks(captured); }, () => undefined);
+    try { stream = await wait(selecting); }
+    catch (error) {
+      if (failure) throw failure;
+      if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'AbortError')) throw cancelled();
+      throw new Error('无法获取屏幕图像，请导入图片或使用桌面应用。');
+    }
+    timeout = setTimeout(() => fail(new Error('读取屏幕图像超时，请重试。')), 10_000);
+    video = document.createElement('video');
+    video.muted = true; video.playsInline = true; video.srcObject = stream;
+    const ended = () => fail(cancelled());
+    for (const track of stream.getTracks()) {
+      track.addEventListener('ended', ended, { once: true });
+      cleanups.push(() => track.removeEventListener('ended', ended));
+      if (track.readyState === 'ended') ended();
+    }
+    if (failure) throw failure;
+    const currentVideo = video;
+    let frameReady!: () => void;
+    const frame = new Promise<void>(resolve => { frameReady = resolve; });
+    const ready = () => { if (currentVideo.readyState >= 2 && currentVideo.videoWidth > 0) frameReady(); };
+    const videoError = () => fail(new Error('读取屏幕图像失败。'));
+    video.addEventListener('loadeddata', ready);
+    video.addEventListener('error', videoError);
+    cleanups.push(() => { currentVideo.removeEventListener('loadeddata', ready); currentVideo.removeEventListener('error', videoError); });
+    // The deadline and abort handler are live before play(), which can stay pending.
+    await wait(video.play());
+    ready();
+    await wait(frame);
     const width = video.videoWidth;
     const height = video.videoHeight;
     if (!width || !height) throw new Error('屏幕图像为空，请重试。');
@@ -183,8 +217,9 @@ export async function captureDisplay(): Promise<Screenshot> {
     context.drawImage(video, 0, 0);
     return { dataUrl: canvas.toDataURL('image/png'), width, height };
   } finally {
-    for (const track of stream.getTracks()) track.stop();
-    video.pause();
-    video.srcObject = null;
+    finished = true;
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', abort);
+    release();
   }
 }

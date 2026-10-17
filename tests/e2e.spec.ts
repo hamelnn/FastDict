@@ -123,7 +123,7 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
 
 test('first launch has zero services and choosing a template does not save until confirmed', async ({ page }) => {
   const guide = page.getByRole('region', { name: '添加翻译服务引导' });
-  await expect(guide.getByRole('heading', { name: '添加你的第一个翻译服务' })).toBeVisible();
+  await expect(guide.getByRole('heading', { name: '配置翻译服务后开始' })).toBeVisible();
   await expect(page.locator('.provider-row')).toHaveCount(0);
   await expect(page.getByLabel('翻译服务', { exact: true })).toBeDisabled();
   await expect(page.getByLabel('翻译服务', { exact: true })).toContainText('请先添加服务');
@@ -140,6 +140,7 @@ test('first launch has zero services and choosing a template does not save until
   await expect(guide).toBeVisible();
   await expect(page.locator('.provider-row')).toHaveCount(0);
   await navigate(page, '偏好设置');
+  await page.getByRole('button', { name: '高级设置', exact: true }).click();
   const desktop = page.getByRole('region', { name: '桌面行为' });
   await expect(desktop.getByLabel('关闭主窗口时', { exact: true })).toBeDisabled();
   await expect(desktop.getByRole('switch', { name: '开机启动', exact: true })).toBeDisabled();
@@ -159,7 +160,7 @@ test('removing the last explicitly configured service returns to onboarding afte
   await page.reload();
   await expect(page.getByRole('region', { name: '添加翻译服务引导' })).toBeVisible();
   await expect(page.locator('.provider-row')).toHaveCount(0);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('fastdict.v1.providers') || 'null'))).toEqual([]);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('fastdict.v1.configuration')!).providers)).toEqual([]);
   expect(requests).toEqual([]);
 });
 
@@ -231,21 +232,36 @@ test('shows HTTP 401 errors with key redaction and keeps keys out of persistent 
   expect(stored).not.toContain(fakeKey);
   await page.reload();
   await navigate(page, '偏好设置');
-  await expect(page.locator('.settings-provider').filter({ hasText: '私有测试 API' })).toContainText('待配置');
+  // The local server remains usable without a key; the browser session secret
+  // must still be absent after reload, independently of that readiness label.
+  const provider = page.locator('.settings-provider').filter({ hasText: '私有测试 API' });
+  await expect(provider).toContainText('已配置');
+  await provider.click();
+  const editor = page.getByRole('dialog', { name: 'API 服务配置', exact: true });
+  await expect(editor.getByPlaceholder('粘贴你的 API Key')).toHaveValue('');
+  await editor.getByRole('button', { name: '取消', exact: true }).click();
+  await navigate(page, '即时翻译');
+  await page.getByRole('textbox', { name: '待翻译文本' }).fill('Hello world');
+  await page.getByRole('button', { name: '翻译', exact: true }).click();
+  await expect(page.locator('.translation-output')).toHaveText('你好，世界。');
+  expect(requests.at(-1)?.authorization).toBeUndefined();
 });
 
 test('persists translation locale, OCR language and automatic translation choices after reload', async ({ page }) => {
   await page.getByLabel('源语言', { exact: true }).selectOption('en');
   await page.getByLabel('目标语言', { exact: true }).selectOption('ja');
   await navigate(page, '偏好设置');
+  await page.getByRole('button', { name: '高级设置', exact: true }).click();
   await page.getByLabel('OCR 识别语言', { exact: true }).selectOption('eng+chi_sim');
+  await page.getByRole('button', { name: '返回设置', exact: true }).click();
   await page.getByRole('switch', { name: '粘贴与导入后自动翻译', exact: true }).click();
   await page.reload();
   await expect(page.getByLabel('源语言', { exact: true })).toHaveValue('en');
   await expect(page.getByLabel('目标语言', { exact: true })).toHaveValue('ja');
   await navigate(page, '偏好设置');
-  await expect(page.getByLabel('OCR 识别语言', { exact: true })).toHaveValue('eng+chi_sim');
   await expect(page.getByRole('switch', { name: '粘贴与导入后自动翻译', exact: true })).toHaveAttribute('aria-checked', 'false');
+  await page.getByRole('button', { name: '高级设置', exact: true }).click();
+  await expect(page.getByLabel('OCR 识别语言', { exact: true })).toHaveValue('eng+chi_sim');
 });
 
 test('recognizes a real PNG using packaged Tesseract WASM and automatically translates its text', async ({ page }, info) => {
@@ -322,7 +338,7 @@ test('captures a display frame, crops scaled pixel coordinates and recognizes on
   expect(Math.abs(cropped.width - 750)).toBeLessThanOrEqual(2);
   expect(Math.abs(cropped.height - 200)).toBeLessThanOrEqual(2);
   expect(requests.at(-1)?.source).not.toMatch(/outside region/i);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('fastdict.v1.preferences') || '{}').autoTranslate)).toBe(false);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('fastdict.v1.configuration')!).preferences.autoTranslate)).toBe(false);
 });
 
 test.describe('mobile viewport', () => {
