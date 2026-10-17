@@ -1,10 +1,39 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mobileEnvironment, androidPreflight, iosPreflight } from '../mobile-preflight.mjs';
-import { parseMobileArgs, verifyAndroidPackage, configureAndroidSdk, mobileBuildEnvironment, selectIosArtifact } from '../mobile.mjs';
+import { parseMobileArgs, verifyAndroidPackage, configureAndroidSdk, mobileBuildEnvironment, selectIosArtifact, configureIosSimulatorArchitecture, withIosSimulatorArchitecture } from '../mobile.mjs';
+
+test('iOS cross-architecture packaging overrides simulator settings and restores the project even on failure', async () => {
+  const fixture = `objects = {\n  DEBUG = {\n    buildSettings = {\n      ARCHS = (arm64, x86_64);\n      "ARCHS[sdk=iphonesimulator*]" = arm64;\n      "EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;\n      ONLY_ACTIVE_ARCH = YES;\n    };\n  };\n  RELEASE = {\n    buildSettings = {\n      PRODUCT_NAME = FastLingo;\n    };\n  };\n};\n`;
+  const directory = await mkdtemp(join(tmpdir(), 'fastlingo-ios-arch-'));
+  const project = join(directory, 'fastdict.xcodeproj');
+  const path = join(project, 'project.pbxproj');
+  try {
+    await mkdir(project);
+    await writeFile(path, fixture);
+    for (const arch of ['arm64', 'x86_64']) {
+      const value = await withIosSimulatorArchitecture(directory, arch, async () => {
+        const changed = await readFile(path, 'utf8');
+        assert.equal((changed.match(new RegExp(`"ARCHS\\[sdk=iphonesimulator\\*\\]" = ${arch};`, 'g')) || []).length, 2);
+        assert.equal((changed.match(/"ONLY_ACTIVE_ARCH\[sdk=iphonesimulator\*\]" = NO;/g) || []).length, 2);
+        assert.match(changed, /"EXCLUDED_ARCHS\[sdk=iphoneos\*\]" = x86_64;/);
+        assert.match(changed, /PRODUCT_NAME = FastLingo;/);
+        return 'built';
+      });
+      assert.equal(value, 'built');
+      assert.equal(await readFile(path, 'utf8'), fixture);
+    }
+    await assert.rejects(withIosSimulatorArchitecture(directory, 'x86_64', () => { throw new Error('xcodebuild failed'); }), /xcodebuild failed/);
+    assert.equal(await readFile(path, 'utf8'), fixture);
+    assert.throws(() => configureIosSimulatorArchitecture(fixture, 'arm64-sim'), /架构无效/);
+    assert.throws(() => configureIosSimulatorArchitecture('unexpected project', 'arm64'), /buildSettings/);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
 
 test('iOS selects architecture before uniqueness across both simulator exports', () => {
   const expected = { identifier: 'app.fastdict.translate', version: '0.4.0', arch: 'arm64' };
@@ -25,6 +54,7 @@ test('iOS selects architecture before uniqueness across both simulator exports',
   const candidates = [...apps.keys()];
   assert.equal(selectIosArtifact(candidates, expected, tools), 'arm/FastLingo.app');
   assert.equal(selectIosArtifact(candidates.reverse(), { ...expected, arch: 'x86_64' }, tools), 'intel/FastLingo.app');
+  assert.throws(() => selectIosArtifact(['arm/FastLingo.app'], { ...expected, arch: 'x86_64' }, tools), /x86_64[\s\S]*architectures=arm64/);
   assert.throws(() => selectIosArtifact(['old/FastLingo.app', 'device/FastLingo.app', 'broken/FastLingo.app'], expected, tools), /唯一/);
   apps.set('duplicate/FastLingo.app', { arch: 'arm64' });
   assert.throws(() => selectIosArtifact([...candidates, 'duplicate/FastLingo.app'], expected, tools), /唯一/);

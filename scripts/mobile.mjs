@@ -67,6 +67,39 @@ async function prepareAndroidProject(project) {
   if (configured !== original) await writeFile(path, configured, 'utf8');
 }
 
+export function configureIosSimulatorArchitecture(project, arch) {
+  if (!['arm64', 'x86_64'].includes(arch)) throw new Error('iOS 模拟器构建架构无效。');
+  // Tauri's archive command can use the host architecture even when --target
+  // names a different simulator. Xcode must build that target, not just export
+  // the host binary into a directory named after the requested architecture.
+  // Conditional settings keep physical-device settings out of this override.
+  const existing = /^[ \t]*"(?:ARCHS|VALID_ARCHS|ONLY_ACTIVE_ARCH)\[sdk=iphonesimulator\*\]"\s*=\s*(?:\([^;]*\)|[^;]*);[ \t]*\r?\n/gm;
+  const cleaned = project.replace(existing, '');
+  let blocks = 0;
+  const configured = cleaned.replace(/^([ \t]*)buildSettings = \{[ \t]*(\r?)$/gm, (_, indent, cr) => {
+    blocks++;
+    return `${indent}buildSettings = {${cr}\n${indent}\t"ARCHS[sdk=iphonesimulator*]" = ${arch};${cr}\n${indent}\t"VALID_ARCHS[sdk=iphonesimulator*]" = ${arch};${cr}\n${indent}\t"ONLY_ACTIVE_ARCH[sdk=iphonesimulator*]" = NO;${cr}`;
+  });
+  if (!blocks) throw new Error('Xcode 工程缺少预期 buildSettings，无法固定模拟器架构。');
+  return configured;
+}
+
+export async function withIosSimulatorArchitecture(projectDirectory, arch, build) {
+  const projects = (await readdir(projectDirectory, { withFileTypes: true })).filter(entry => entry.isDirectory() && entry.name.endsWith('.xcodeproj'));
+  if (projects.length !== 1) throw new Error('未能唯一找到 iOS Xcode 工程。');
+  const path = join(projectDirectory, projects[0].name, 'project.pbxproj');
+  const original = await readFile(path, 'utf8');
+  const configured = configureIosSimulatorArchitecture(original, arch);
+  await writeFile(path, configured, 'utf8');
+  try {
+    return await build();
+  } finally {
+    // Restore developer settings on both success and failure so later device
+    // runs or the other simulator architecture do not inherit this override.
+    await writeFile(path, original, 'utf8');
+  }
+}
+
 function run(command, args, env, capture = false) {
   const result = spawnSync(command, args, { cwd: root, env, stdio: capture ? 'pipe' : 'inherit', encoding: 'utf8', windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
   if (result.error || result.status !== 0) throw new Error(`${basename(command)} 执行失败（${result.status ?? result.error?.code}）。请查看构建输出。`);
@@ -125,16 +158,25 @@ async function exportIos(info, config, env) {
 }
 
 export function selectIosArtifact(candidates, expected, { plistValue, architectures }) {
+  const diagnostics = [];
   const valid = candidates.filter(app => {
     try {
-      if (plistValue(app, 'CFBundleIdentifier') !== expected.identifier || plistValue(app, 'CFBundleShortVersionString') !== expected.version || plistValue(app, 'CFBundleSupportedPlatforms:0') !== 'iPhoneSimulator') return false;
+      const identifier = plistValue(app, 'CFBundleIdentifier');
+      const version = plistValue(app, 'CFBundleShortVersionString');
+      const platform = plistValue(app, 'CFBundleSupportedPlatforms:0');
+      if (identifier !== expected.identifier || version !== expected.version || platform !== 'iPhoneSimulator') {
+        diagnostics.push(`${app}: identifier=${identifier}, version=${version}, platform=${platform}`);
+        return false;
+      }
       const executable = plistValue(app, 'CFBundleExecutable');
-      if (!/^[A-Za-z0-9._-]+$/.test(executable)) return false;
+      if (!/^[A-Za-z0-9._-]+$/.test(executable)) { diagnostics.push(`${app}: executable 无效`); return false; }
+      const arch = architectures(join(app, executable)).trim();
+      diagnostics.push(`${app}: architectures=${arch}`);
       // Another target's normal output is not a duplicate of this target.
-      return architectures(join(app, executable)).trim() === expected.arch;
-    } catch { return false; }
+      return arch === expected.arch;
+    } catch { diagnostics.push(`${app}: 无法读取 Info.plist 或可执行文件架构`); return false; }
   });
-  if (valid.length !== 1) throw new Error(`未能唯一找到当前版本、包名与 ${expected.arch} 架构的 iOS 模拟器应用。`);
+  if (valid.length !== 1) throw new Error(`未能唯一找到当前版本、包名与 ${expected.arch} 架构的 iOS 模拟器应用（匹配 ${valid.length} 个）。\n${diagnostics.slice(0, 16).join('\n')}`);
   return valid[0];
 }
 
@@ -175,7 +217,11 @@ async function main() {
   args.push(options.platform === 'android' ? '--apk' : '--no-sign');
   args.push('--', '--locked');
   const buildEnv = mobileBuildEnvironment(options.platform, env);
-  run(process.execPath, args, buildEnv);
+  if (options.platform === 'ios') {
+    await withIosSimulatorArchitecture(project, info.arch, () => run(process.execPath, args, buildEnv));
+  } else {
+    run(process.execPath, args, buildEnv);
+  }
   await (options.platform === 'android' ? exportAndroid : exportIos)(info, config, buildEnv);
 }
 

@@ -12,5 +12,22 @@ fn main() {
         "translate_with_chatgpt", "cancel_chatgpt_translation", "save_api_key", "get_api_key", "delete_api_key",
         "mobile_pick_image", "mobile_share_text",
     ]);
-    tauri_build::try_build(tauri_build::Attributes::new().app_manifest(app)).expect("build application ACL");
+    let mut attributes = tauri_build::Attributes::new().app_manifest(app);
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        // Tauri's normal resource is linked only to application binaries. Unit
+        // tests using MockRuntime also import Common Controls v6 functions, so
+        // their EXE needs the activation manifest before Windows loads it.
+        // Compile the manifest once for every artifact (MSVC and GNU), while
+        // keeping Tauri's version/icon resource free of a duplicate manifest.
+        // https://github.com/tauri-apps/tauri/issues/13419
+        attributes = attributes.windows_attributes(
+            tauri_build::WindowsAttributes::new_without_app_manifest(),
+        );
+        println!("cargo:rerun-if-changed=windows-app-manifest.xml");
+        println!("cargo:rerun-if-changed=windows-app-manifest.rc");
+        embed_resource::compile_for_everything("windows-app-manifest.rc", embed_resource::NONE)
+            .manifest_required()
+            .expect("embed Common Controls v6 activation manifest");
+    }
+    tauri_build::try_build(attributes).expect("build application ACL");
 }

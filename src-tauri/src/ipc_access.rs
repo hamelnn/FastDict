@@ -43,10 +43,12 @@ mod tests {
     #[test]
     fn runtime_acl_denies_capture_secrets_os_commands_and_event_emission_before_dispatch() {
         use tauri::{ipc::{CallbackFn, InvokeBody}, test::{get_ipc_response, mock_builder, INVOKE_KEY}, webview::InvokeRequest};
+        // Keep the real application ACL, but avoid a second macOS Info.plist
+        // symbol in the test binary alongside the production context in run().
         let app = mock_builder().manage(SyntheticOs::default()).invoke_handler(tauri::generate_handler![
             get_api_key, save_api_key, delete_api_key, read_clipboard, write_clipboard, configure_shortcuts, quit_app, forget_chatgpt_profile,
             get_capture, recover_capture, capture_boot_error,
-        ]).build(tauri::generate_context!()).unwrap();
+        ]).build(tauri::generate_context!(test = true)).unwrap();
         let main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
         let capture = tauri::WebviewWindowBuilder::new(&app, "capture", Default::default()).build().unwrap();
         let other = tauri::WebviewWindowBuilder::new(&app, "other", Default::default()).build().unwrap();
