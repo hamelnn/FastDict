@@ -17,7 +17,7 @@ test('iOS simulator builds reject cross-host targets before changing the generat
 });
 
 test('iOS cross-architecture packaging overrides simulator settings and restores the project even on failure', async () => {
-  const fixture = `objects = {\n  DEBUG = {\n    buildSettings = {\n      ARCHS = (arm64, x86_64);\n      "ARCHS[sdk=iphonesimulator*]" = arm64;\n      "EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;\n      ONLY_ACTIVE_ARCH = YES;\n    };\n  };\n  RELEASE = {\n    buildSettings = {\n      PRODUCT_NAME = FastLingo;\n    };\n  };\n};\n`;
+  const fixture = `objects = {\n  DEBUG = {\n    buildSettings = {\n      SDKROOT = iphoneos;\n      SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";\n      ARCHS = (arm64, x86_64);\n      "ARCHS[sdk=iphonesimulator*]" = arm64;\n      "EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;\n      ONLY_ACTIVE_ARCH = YES;\n    };\n  };\n  RELEASE = {\n    buildSettings = {\n      "SDKROOT" = iphoneos;\n      "SUPPORTED_PLATFORMS" = (\n        iphoneos,\n        iphonesimulator,\n      );\n      PRODUCT_NAME = FastLingo;\n    };\n  };\n};\n`;
   const directory = await mkdtemp(join(tmpdir(), 'fastlingo-ios-arch-'));
   const project = join(directory, 'fastdict.xcodeproj');
   const path = join(project, 'project.pbxproj');
@@ -29,6 +29,11 @@ test('iOS cross-architecture packaging overrides simulator settings and restores
         const changed = await readFile(path, 'utf8');
         assert.equal((changed.match(new RegExp(`"ARCHS\\[sdk=iphonesimulator\\*\\]" = ${arch};`, 'g')) || []).length, 2);
         assert.equal((changed.match(/"ONLY_ACTIVE_ARCH\[sdk=iphonesimulator\*\]" = NO;/g) || []).length, 2);
+        assert.equal((changed.match(/SDKROOT = iphonesimulator;/g) || []).length, 2);
+        assert.equal((changed.match(/SUPPORTED_PLATFORMS = iphonesimulator;/g) || []).length, 2);
+        assert.doesNotMatch(changed, /"?SDKROOT"? = iphoneos/);
+        assert.doesNotMatch(changed, /SUPPORTED_PLATFORMS"? = ["(]/);
+        assert.equal(configureIosSimulatorArchitecture(changed, arch), changed, 'Repeated configuration must not duplicate SDK or architecture keys');
         assert.match(changed, /"EXCLUDED_ARCHS\[sdk=iphoneos\*\]" = x86_64;/);
         assert.match(changed, /PRODUCT_NAME = FastLingo;/);
         return 'built';

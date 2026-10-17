@@ -72,13 +72,16 @@ export function configureIosSimulatorArchitecture(project, arch) {
   // Tauri's archive command can use the host architecture even when --target
   // names a different simulator. Xcode must build that target, not just export
   // the host binary into a directory named after the requested architecture.
-  // Conditional settings keep physical-device settings out of this override.
+  // Archive can otherwise choose the project's default iphoneos destination
+  // even for an Intel simulator target. Restrict this temporary configuration
+  // to the simulator SDK as well; the original project is always restored.
   const existing = /^[ \t]*"(?:ARCHS|VALID_ARCHS|ONLY_ACTIVE_ARCH)\[sdk=iphonesimulator\*\]"\s*=\s*(?:\([^;]*\)|[^;]*);[ \t]*\r?\n/gm;
-  const cleaned = project.replace(existing, '');
+  const platformSettings = /^[ \t]*(?:"(?:SDKROOT|SUPPORTED_PLATFORMS)"|SDKROOT|SUPPORTED_PLATFORMS)\s*=\s*(?:\([^;]*\)|[^;]*);[ \t]*\r?\n/gm;
+  const cleaned = project.replace(existing, '').replace(platformSettings, '');
   let blocks = 0;
   const configured = cleaned.replace(/^([ \t]*)buildSettings = \{[ \t]*(\r?)$/gm, (_, indent, cr) => {
     blocks++;
-    return `${indent}buildSettings = {${cr}\n${indent}\t"ARCHS[sdk=iphonesimulator*]" = ${arch};${cr}\n${indent}\t"VALID_ARCHS[sdk=iphonesimulator*]" = ${arch};${cr}\n${indent}\t"ONLY_ACTIVE_ARCH[sdk=iphonesimulator*]" = NO;${cr}`;
+    return `${indent}buildSettings = {${cr}\n${indent}\tSDKROOT = iphonesimulator;${cr}\n${indent}\tSUPPORTED_PLATFORMS = iphonesimulator;${cr}\n${indent}\t"ARCHS[sdk=iphonesimulator*]" = ${arch};${cr}\n${indent}\t"VALID_ARCHS[sdk=iphonesimulator*]" = ${arch};${cr}\n${indent}\t"ONLY_ACTIVE_ARCH[sdk=iphonesimulator*]" = NO;${cr}`;
   });
   if (!blocks) throw new Error('Xcode 工程缺少预期 buildSettings，无法固定模拟器架构。');
   return configured;
@@ -113,7 +116,7 @@ export async function withIosSimulatorArchitecture(projectDirectory, arch, build
 
 async function diagnoseIosBuild(projectDirectory, projectPath, info, env) {
   const project = await readFile(projectPath, 'utf8');
-  const projectLines = project.split(/\r?\n/).filter(line => /ARCHS|LIBRARY_SEARCH_PATHS|OTHER_LDFLAGS|SDKROOT|Build Rust Code|shellScript|libapp\.a/.test(line)).map(line => line.slice(0, 4000));
+  const projectLines = project.split(/\r?\n/).filter(line => /ARCHS|LIBRARY_SEARCH_PATHS|OTHER_LDFLAGS|SDKROOT|SUPPORTED_PLATFORMS|Build Rust Code|shellScript|libapp\.a/.test(line)).map(line => line.slice(0, 4000));
   const lines = [`iOS build diagnostics: target=${info.target}, requested=${info.arch}, host=${process.arch}`, 'Xcode project settings / Rust phase:', ...projectLines.slice(0, 120), 'Actual Externals static libraries:'];
   const libraries = await findArtifacts(join(projectDirectory, 'Externals'), '.a');
   if (!libraries.length) lines.push('(none)');
@@ -122,9 +125,9 @@ async function diagnoseIosBuild(projectDirectory, projectPath, info, env) {
     lines.push(`${path}: ${lipo.status === 0 ? lipo.stdout.trim() : (lipo.stderr?.trim() || lipo.error?.message || `exit=${lipo.status}`)}`);
   }
   const scheme = basename(dirname(projectPath), '.xcodeproj') + '_iOS';
-  const settings = spawnSync('/usr/bin/xcodebuild', ['-project', dirname(projectPath), '-scheme', scheme, '-sdk', 'iphonesimulator', '-configuration', 'debug', '-showBuildSettings'], { cwd: projectDirectory, env, encoding: 'utf8', timeout: 30_000, maxBuffer: 2 * 1024 * 1024 });
-  lines.push('Effective Xcode build settings:');
-  lines.push(...(settings.stdout || '').split(/\r?\n/).filter(line => /^\s*(ARCHS|VALID_ARCHS|ONLY_ACTIVE_ARCH|CURRENT_ARCH|SDKROOT|PLATFORM_NAME|CONFIGURATION|LIBRARY_SEARCH_PATHS|OTHER_LDFLAGS)\s*=/.test(line)));
+  const settings = spawnSync('/usr/bin/xcodebuild', ['-project', dirname(projectPath), '-scheme', scheme, '-configuration', 'debug', '-showBuildSettings'], { cwd: projectDirectory, env, encoding: 'utf8', timeout: 30_000, maxBuffer: 2 * 1024 * 1024 });
+  lines.push('Effective Xcode build settings (project default SDK, no command-line override):');
+  lines.push(...(settings.stdout || '').split(/\r?\n/).filter(line => /^\s*(ARCHS|VALID_ARCHS|ONLY_ACTIVE_ARCH|CURRENT_ARCH|SDKROOT|SUPPORTED_PLATFORMS|PLATFORM_NAME|CONFIGURATION|LIBRARY_SEARCH_PATHS|OTHER_LDFLAGS)\s*=/.test(line)));
   if (settings.status !== 0) lines.push(`showBuildSettings: ${settings.error?.message || `exit=${settings.status}`}`);
   const report = lines.join('\n') + '\n';
   process.stderr.write(report);
