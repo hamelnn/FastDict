@@ -1,6 +1,6 @@
 # iOS 与 Android
 
-0.5.0 新增随系统变化的纯白 / 纯黑主题及可编辑翻译提示词。设置首页保留常用选项，OCR、预热和选图说明在“高级设置”；手机仍使用 API 翻译。本次准备发布 Android ARM64 debug APK 与 iOS ARM64 / Intel 模拟器 ZIP，见 [0.5.0 下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.5.0)，以实际附件与构建记录为准。本节以下的 0.2.0 发布验收记录不代表新版本真机复测。
+0.5.0 新增随系统变化的纯白 / 纯黑主题及可编辑翻译提示词。设置首页保留常用选项，OCR、预热和选图说明在“高级设置”；手机仍使用 API 翻译。发行格式为 Android ARM64 debug APK 与 iOS ARM64 / Intel 模拟器 ZIP，见 [0.5.0 下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.5.0)，以实际附件与构建记录为准。本节以下的 0.2.0 发布验收记录不代表新版本真机复测。
 
 0.2.0 增加独立手机布局和原生移动接口，复用桌面的本地 OCR、翻译协议、多服务配置与历史记录。
 
@@ -51,7 +51,7 @@ npm run ios:init
 npm run ios:build
 ```
 
-默认生成与当前 Mac 架构对应的无签名模拟器应用，输出 `release/ios/*.app.zip` 与校验清单。导出会先核对包名、版本、模拟器平台与架构，再检查候选是否唯一，因此同一工作区可保留 ARM64 和 Intel 两种输出。构建使用 `--locked`。解压后将 `.app` 拖入已启动的 iOS Simulator。
+默认生成与当前 Mac 架构对应的无签名模拟器应用，输出 `release/ios/*.app.zip` 与校验清单。当前 Tauri 的 Rust Xcode 阶段按主机选择模拟器架构，因此 Intel 包需在 Intel Mac 构建，ARM64 包需在 Apple Silicon 构建；`ios:build` 会在修改工程前拒绝跨主机架构请求。导出会先核对包名、版本、模拟器平台与实际单一架构，再检查候选是否唯一；保留其他架构旧输出不会干扰选择。构建使用 `--locked`。解压后将 `.app` 拖入已启动的 iOS Simulator。
 
 交互调试使用 `npm run ios`，由 Tauri 选择模拟器或连接的 iPhone。首次执行 `npm run ios:init` 后，可用以下方式打开 Xcode；保持终端运行，在 Xcode 选择设备、自己的签名 Team 与自动签名，再运行应用：
 
@@ -64,7 +64,7 @@ npm run ios -- --open
 
 `npm run ios -- --open` 支持官方设备与网络选项（例如 `--host`），不要求先安装无关的模拟器架构。`ios:build` 仍仅导出模拟器包，不生成已签名的真机 IPA。以上入口已通过脚本测试，新的 Xcode 调试路径尚未在 Mac / iPhone 验收。
 
-**Build iOS simulator app** 在移动相关变更时自动编译，连续构建两种模拟器架构；手动运行还会启动当前主机架构的临时模拟器并上传产物。脚本夹具覆盖双架构残留、同架构重复、旧版本、损坏 plist 和真机包；Windows 上通过这些夹具不代表已在 Xcode 执行构建或完成设备验收。
+**Build iOS simulator app** 在移动相关变更时通过 Apple Silicon / Intel runner 矩阵分别编译对应架构。手动运行仅在 ARM64 上启动临时模拟器；两端都成功后，汇总任务校验两个包的版本与 SHA-256，再合并为一个最终下载产物。构建失败会记录 Xcode 相关设置、Rust 阶段与 Externals 静态库的实际路径 / 架构。脚本夹具覆盖双架构残留、同架构重复、旧版本、损坏 plist 和真机包；Windows 上通过这些夹具不代表已在 Xcode 执行构建或完成设备验收。
 
 模拟器包不能安装到 iPhone / iPad。真机安装需在生成的 Xcode 工程里配置自己的 Apple Team 与签名；TestFlight / App Store 另需发行配置。当前工作流不上传商店。
 

@@ -1,6 +1,6 @@
 # macOS 版
 
-0.5.0 采用随系统变化的纯白 / 纯黑界面。提示词在设置首页编辑；录屏权限、OCR、桌面行为和快捷键移入“高级设置”。本次准备发布 Apple Silicon / Intel 通用 DMG 与应用 ZIP，见 [0.5.0 下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.5.0)，以实际附件与构建记录为准。真机操作流程仍待验收。
+0.5.0 采用随系统变化的纯白 / 纯黑界面。提示词在设置首页编辑；录屏权限、OCR、桌面行为和快捷键移入“高级设置”。发行格式为 Apple Silicon / Intel 通用 DMG 与应用 ZIP，见 [0.5.0 下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.5.0)，以实际附件与构建记录为准。真机操作流程仍待验收。
 
 已实现菜单栏、Mac 快捷键、权限引导和 Keychain。应用名称为 FastLingo，关闭按钮默认退出，开机启动默认关闭；可在高级设置调整。历史版本 0.2.0 曾通过 [macOS 通用包构建](https://github.com/hamelnn/FastDict/actions/runs/38749467816)，其包验证不代表 0.5.0 验收结果。
 

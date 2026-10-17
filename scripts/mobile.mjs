@@ -84,7 +84,14 @@ export function configureIosSimulatorArchitecture(project, arch) {
   return configured;
 }
 
-export async function withIosSimulatorArchitecture(projectDirectory, arch, build) {
+export function requireNativeIosSimulatorHost(arch, hostArch = process.arch) {
+  const nativeArch = hostArch === 'arm64' ? 'arm64' : hostArch === 'x64' ? 'x86_64' : undefined;
+  // tauri ios xcode-script currently replaces simulator ARCHS with its own
+  // host architecture before compiling and copying Externals/<arch>/libapp.a.
+  if (!nativeArch || arch !== nativeArch) throw new Error('当前 Tauri iOS 构建要求模拟器架构与主机一致：Intel 模拟器包需 Intel Mac，ARM64 模拟器包需 Apple Silicon Mac。请在对应 Mac 或 GitHub 双架构构建工作流运行。');
+}
+
+export async function withIosSimulatorArchitecture(projectDirectory, arch, build, onFailure) {
   const projects = (await readdir(projectDirectory, { withFileTypes: true })).filter(entry => entry.isDirectory() && entry.name.endsWith('.xcodeproj'));
   if (projects.length !== 1) throw new Error('未能唯一找到 iOS Xcode 工程。');
   const path = join(projectDirectory, projects[0].name, 'project.pbxproj');
@@ -93,11 +100,37 @@ export async function withIosSimulatorArchitecture(projectDirectory, arch, build
   await writeFile(path, configured, 'utf8');
   try {
     return await build();
+  } catch (error) {
+    try { await onFailure?.(path); }
+    catch (diagnosticError) { process.stderr.write(`iOS 构建诊断未完成：${diagnosticError.message}\n`); }
+    throw error;
   } finally {
     // Restore developer settings on both success and failure so later device
     // runs or the other simulator architecture do not inherit this override.
     await writeFile(path, original, 'utf8');
   }
+}
+
+async function diagnoseIosBuild(projectDirectory, projectPath, info, env) {
+  const project = await readFile(projectPath, 'utf8');
+  const projectLines = project.split(/\r?\n/).filter(line => /ARCHS|LIBRARY_SEARCH_PATHS|OTHER_LDFLAGS|SDKROOT|Build Rust Code|shellScript|libapp\.a/.test(line)).map(line => line.slice(0, 4000));
+  const lines = [`iOS build diagnostics: target=${info.target}, requested=${info.arch}, host=${process.arch}`, 'Xcode project settings / Rust phase:', ...projectLines.slice(0, 120), 'Actual Externals static libraries:'];
+  const libraries = await findArtifacts(join(projectDirectory, 'Externals'), '.a');
+  if (!libraries.length) lines.push('(none)');
+  for (const path of libraries.slice(0, 32)) {
+    const lipo = spawnSync('/usr/bin/lipo', ['-archs', path], { env, encoding: 'utf8', timeout: 10_000, maxBuffer: 64 * 1024 });
+    lines.push(`${path}: ${lipo.status === 0 ? lipo.stdout.trim() : (lipo.stderr?.trim() || lipo.error?.message || `exit=${lipo.status}`)}`);
+  }
+  const scheme = basename(dirname(projectPath), '.xcodeproj') + '_iOS';
+  const settings = spawnSync('/usr/bin/xcodebuild', ['-project', dirname(projectPath), '-scheme', scheme, '-sdk', 'iphonesimulator', '-configuration', 'debug', '-showBuildSettings'], { cwd: projectDirectory, env, encoding: 'utf8', timeout: 30_000, maxBuffer: 2 * 1024 * 1024 });
+  lines.push('Effective Xcode build settings:');
+  lines.push(...(settings.stdout || '').split(/\r?\n/).filter(line => /^\s*(ARCHS|VALID_ARCHS|ONLY_ACTIVE_ARCH|CURRENT_ARCH|SDKROOT|PLATFORM_NAME|CONFIGURATION|LIBRARY_SEARCH_PATHS|OTHER_LDFLAGS)\s*=/.test(line)));
+  if (settings.status !== 0) lines.push(`showBuildSettings: ${settings.error?.message || `exit=${settings.status}`}`);
+  const report = lines.join('\n') + '\n';
+  process.stderr.write(report);
+  const output = join(root, 'release/ios');
+  await mkdir(output, { recursive: true });
+  await writeFile(join(output, `build-diagnostics-${info.target}.txt`), report);
 }
 
 function run(command, args, env, capture = false) {
@@ -194,6 +227,7 @@ async function main() {
   }
   const env = mobileEnvironment(root);
   const info = (options.platform === 'android' ? androidPreflight : iosPreflight)({ target: options.target, action: options.action, env });
+  if (options.platform === 'ios' && options.action === 'build') requireNativeIosSimulatorHost(info.arch);
   if (options.action === 'check') { process.stdout.write(`${options.platform} ${options.target} 构建环境检查通过。\n`); return; }
   const config = JSON.parse(await readFile(join(root, 'src-tauri/tauri.conf.json'), 'utf8'));
   const packageInfo = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
@@ -218,7 +252,7 @@ async function main() {
   args.push('--', '--locked');
   const buildEnv = mobileBuildEnvironment(options.platform, env);
   if (options.platform === 'ios') {
-    await withIosSimulatorArchitecture(project, info.arch, () => run(process.execPath, args, buildEnv));
+    await withIosSimulatorArchitecture(project, info.arch, () => run(process.execPath, args, buildEnv), path => diagnoseIosBuild(project, path, info, buildEnv));
   } else {
     run(process.execPath, args, buildEnv);
   }

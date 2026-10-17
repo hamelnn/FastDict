@@ -4,7 +4,7 @@
 
 React + TypeScript 界面，Tauri 2 原生外壳，复用系统 WebView。
 
-**0.5.0 发布准备**：[版本下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.5.0)。本次目标包含 Windows 安装包 / 便携 ZIP、macOS 通用 DMG / 应用 ZIP、Android ARM64 测试 APK，以及 iOS ARM64 / Intel 模拟器 ZIP；实际可下载文件、签名和校验值以该版本 Release 附件为准。iOS 模拟器包不能安装到 iPhone，真机需要另行配置 Apple 签名。
+**0.5.0 下载**：[版本下载页](https://github.com/hamelnn/FastDict/releases/tag/v0.5.0)。各平台文件包括 Windows 安装包 / 便携 ZIP、macOS 通用 DMG / 应用 ZIP、Android ARM64 测试 APK，以及 iOS ARM64 / Intel 模拟器 ZIP；实际可下载文件、签名和校验值以该版本 Release 附件为准。iOS 模拟器包不能安装到 iPhone，真机需要另行配置 Apple 签名。
 
 0.3.0 将应用更名为 **FastLingo**，首次启动不预置翻译服务，由用户自行添加。桌面偏好可选择关闭后直接退出或留在托盘，并支持开机启动；默认直接退出、开机不自启。更名沿用原有应用标识、数据目录和存储键，兼容已有服务、历史和密钥。
 
@@ -28,7 +28,7 @@ React + TypeScript 界面，Tauri 2 原生外壳，复用系统 WebView。
 
 ## 平台状态
 
-| 平台 | 0.5.0 交付目标与验证边界 | 使用与构建 |
+| 平台 | 0.5.0 发行文件与验证边界 | 使用与构建 |
 | --- | --- | --- |
 | Windows x64 | NSIS 安装包、便携 ZIP；本地自动化通过，当前版本安装与 GUI 实测另行记录 | [Windows 说明](docs/windows.md) |
 | macOS | Apple Silicon / Intel 通用 DMG、应用 ZIP；ad-hoc 签名，未 Apple 公证，真机流程待验收 | [macOS 说明](docs/macos.md) |

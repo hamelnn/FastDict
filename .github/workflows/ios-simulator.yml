@@ -25,8 +25,21 @@ concurrency:
 
 jobs:
   ios-simulator:
-    name: iOS simulator compile and package
-    runs-on: macos-latest
+    name: iOS simulator ${{ matrix.target }}
+    # Tauri's Rust Xcode phase currently selects the host architecture for
+    # simulators. Build each bundle on its native host instead of relabelling
+    # or cross-linking an ARM library as an Intel simulator application.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            target: aarch64-sim
+            rust-target: aarch64-apple-ios-sim
+          - runner: macos-15-intel
+            target: x86_64
+            rust-target: x86_64-apple-ios
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     env:
       CI: 'true'
@@ -39,7 +52,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
-          targets: aarch64-apple-ios-sim,x86_64-apple-ios
+          targets: ${{ matrix.rust-target }}
       - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: './src-tauri -> target'
@@ -51,12 +64,10 @@ jobs:
       - run: npm run check
       - name: Initialize Xcode project
         run: npm run ios:init
-      - name: Build both unsigned simulator architectures in the same workspace
-        run: |
-          npm run ios:build -- --target=aarch64-sim
-          npm run ios:build -- --target=x86_64
+      - name: Build and verify the native simulator architecture
+        run: npm run ios:build -- --target=${{ matrix.target }}
       - name: Launch on a disposable iPhone simulator and capture the screen
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && matrix.target == 'aarch64-sim'
         env:
           FASTDICT_IOS_SMOKE: 'true'
         run: node scripts/ios-smoke.mjs
@@ -64,7 +75,7 @@ jobs:
         if: ${{ always() && github.event_name == 'workflow_dispatch' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: FastLingo-iOS-simulator-${{ github.run_number }}
+          name: FastLingo-iOS-${{ matrix.target }}-${{ github.run_number }}
           path: |
             release/ios/*.app.zip
             release/ios/manifest-*.json
@@ -72,5 +83,63 @@ jobs:
             release/ios/THIRD_PARTY_NOTICES.md
             release/ios/simulator-launch.png
             release/ios/simulator-smoke.json
+            release/ios/build-diagnostics-*.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  collect-simulators:
+    name: Verify and collect both simulator bundles
+    needs: ios-simulator
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - name: Download ARM64 bundle and launch evidence
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: FastLingo-iOS-aarch64-sim-${{ github.run_number }}
+          path: collected/aarch64-sim
+      - name: Download Intel bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: FastLingo-iOS-x86_64-${{ github.run_number }}
+          path: collected/x86_64
+      - name: Verify manifests and stage complete delivery
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFile, mkdir, copyFile } from 'node:fs/promises';
+          import { createHash } from 'node:crypto';
+          import { basename, join } from 'node:path';
+          const config = JSON.parse(await readFile('src-tauri/tauri.conf.json', 'utf8'));
+          const destination = 'release/ios';
+          await mkdir(destination, { recursive: true });
+          for (const target of ['aarch64-sim', 'x86_64']) {
+            const source = join('collected', target);
+            const manifestName = `manifest-${target}.json`;
+            const manifest = JSON.parse(await readFile(join(source, manifestName), 'utf8'));
+            if (manifest.version !== config.version || manifest.target !== target || manifest.kind !== 'ios-simulator-app' || manifest.deviceInstallable !== false || manifest.artifacts?.length !== 1) throw new Error(`Invalid ${target} manifest`);
+            const artifact = manifest.artifacts[0];
+            const expected = `${config.productName}-iOS-${config.version}-${target}-simulator.app.zip`;
+            if (artifact.name !== expected || basename(artifact.name) !== artifact.name) throw new Error(`Unexpected ${target} archive`);
+            const bytes = await readFile(join(source, artifact.name));
+            if (bytes.length !== artifact.bytes || createHash('sha256').update(bytes).digest('hex') !== artifact.sha256) throw new Error(`Invalid ${target} checksum`);
+            await copyFile(join(source, artifact.name), join(destination, artifact.name));
+            await copyFile(join(source, manifestName), join(destination, manifestName));
+          }
+          const arm = 'collected/aarch64-sim';
+          const smoke = JSON.parse(await readFile(join(arm, 'simulator-smoke.json'), 'utf8'));
+          if (smoke.version !== config.version || smoke.target !== 'aarch64-sim' || smoke.launchSucceeded !== true || smoke.screenshot !== 'simulator-launch.png') throw new Error('ARM64 simulator launch evidence is incomplete');
+          for (const name of ['README-iOS.txt', 'THIRD_PARTY_NOTICES.md', 'simulator-launch.png', 'simulator-smoke.json']) await copyFile(join(arm, name), join(destination, name));
+          console.log('Both simulator archives and ARM64 launch evidence verified.');
+          NODE
+      - name: Upload complete iOS simulator delivery
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: FastLingo-iOS-simulator-${{ github.run_number }}
+          path: release/ios/*
           if-no-files-found: error
           retention-days: 14

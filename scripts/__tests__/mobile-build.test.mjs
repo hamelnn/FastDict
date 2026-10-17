@@ -6,7 +6,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mobileEnvironment, androidPreflight, iosPreflight } from '../mobile-preflight.mjs';
-import { parseMobileArgs, verifyAndroidPackage, configureAndroidSdk, mobileBuildEnvironment, selectIosArtifact, configureIosSimulatorArchitecture, withIosSimulatorArchitecture } from '../mobile.mjs';
+import { parseMobileArgs, verifyAndroidPackage, configureAndroidSdk, mobileBuildEnvironment, selectIosArtifact, configureIosSimulatorArchitecture, withIosSimulatorArchitecture, requireNativeIosSimulatorHost } from '../mobile.mjs';
+
+test('iOS simulator builds reject cross-host targets before changing the generated project', () => {
+  assert.doesNotThrow(() => requireNativeIosSimulatorHost('arm64', 'arm64'));
+  assert.doesNotThrow(() => requireNativeIosSimulatorHost('x86_64', 'x64'));
+  assert.throws(() => requireNativeIosSimulatorHost('x86_64', 'arm64'), /Intel 模拟器包需 Intel Mac/);
+  assert.throws(() => requireNativeIosSimulatorHost('arm64', 'x64'), /ARM64 模拟器包需 Apple Silicon Mac/);
+  assert.throws(() => requireNativeIosSimulatorHost('arm64', 'unknown'), /主机一致/);
+});
 
 test('iOS cross-architecture packaging overrides simulator settings and restores the project even on failure', async () => {
   const fixture = `objects = {\n  DEBUG = {\n    buildSettings = {\n      ARCHS = (arm64, x86_64);\n      "ARCHS[sdk=iphonesimulator*]" = arm64;\n      "EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;\n      ONLY_ACTIVE_ARCH = YES;\n    };\n  };\n  RELEASE = {\n    buildSettings = {\n      PRODUCT_NAME = FastLingo;\n    };\n  };\n};\n`;
@@ -28,7 +36,13 @@ test('iOS cross-architecture packaging overrides simulator settings and restores
       assert.equal(value, 'built');
       assert.equal(await readFile(path, 'utf8'), fixture);
     }
-    await assert.rejects(withIosSimulatorArchitecture(directory, 'x86_64', () => { throw new Error('xcodebuild failed'); }), /xcodebuild failed/);
+    let diagnosticCalls = 0;
+    await assert.rejects(withIosSimulatorArchitecture(directory, 'x86_64', () => { throw new Error('xcodebuild failed'); }, async diagnosticPath => {
+      diagnosticCalls++;
+      assert.equal(diagnosticPath, path);
+      assert.match(await readFile(diagnosticPath, 'utf8'), /"ARCHS\[sdk=iphonesimulator\*\]" = x86_64;/);
+    }), /xcodebuild failed/);
+    assert.equal(diagnosticCalls, 1);
     assert.equal(await readFile(path, 'utf8'), fixture);
     assert.throws(() => configureIosSimulatorArchitecture(fixture, 'arm64-sim'), /架构无效/);
     assert.throws(() => configureIosSimulatorArchitecture('unexpected project', 'arm64'), /buildSettings/);
