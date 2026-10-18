@@ -11,7 +11,9 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 function run(command, args, timeout = 60_000) {
   const result = spawnSync(command, args, { cwd: root, encoding: 'utf8', timeout, maxBuffer: 4 * 1024 * 1024 });
   if (result.error || result.status !== 0) {
-    throw new Error(`${basename(command)} ${args[0]} failed: ${result.stderr?.trim() || result.error?.message || result.status}`);
+    const operation = args.slice(0, command.endsWith('xcrun') ? 2 : 1).join(' ');
+    const detail = result.stderr?.trim() || result.error?.message || result.status;
+    throw new Error(`${basename(command)} ${operation} failed: ${detail}${result.stdout?.trim() ? `; output: ${result.stdout.trim().slice(-2000)}` : ''}`);
   }
   return result.stdout?.trim() || '';
 }
@@ -60,6 +62,11 @@ async function main() {
   const temporary = await mkdtemp(join(output, 'smoke-temp-'));
   let createdDevice;
   const report = { version: config.version, target, scope: 'simulator_process_launch_and_screenshot', deviceTest: 'not_run', uiVerification: 'not_run', launchSucceeded: false, screenshot: null, cleanup: 'not_started' };
+  function stage(name, args, timeout) {
+    report.stage = name;
+    process.stdout.write(`Simulator stage: ${name}\n`);
+    return simctl(args, timeout);
+  }
   try {
     run('/usr/bin/ditto', ['-x', '-k', archive, temporary]);
     const apps = (await readdir(temporary, { withFileTypes: true })).filter(entry => entry.isDirectory() && entry.name.endsWith('.app'));
@@ -72,16 +79,18 @@ async function main() {
 
     // Use an available iPhone as the template, then create our own device. No
     // booted developer/runner device is erased, shut down, reused or deleted.
-    const selection = chooseDevice(JSON.parse(simctl(['list', '--json'])), arch);
+    const selection = chooseDevice(JSON.parse(stage('inventory', ['list', '--json'])), arch);
     report.device = selection.name;
     report.runtime = selection.runtime.version;
     const name = `FastLingo-Smoke-${process.env.GITHUB_RUN_ID || process.pid}-${process.env.GITHUB_RUN_ATTEMPT || '1'}`;
-    const created = simctl(['create', name, selection.type, selection.runtime.identifier]);
+    const created = stage('create', ['create', name, selection.type, selection.runtime.identifier]);
     if (!uuidPattern.test(created)) throw new Error('simctl did not return a device UUID.');
     createdDevice = created;
-    simctl(['bootstatus', createdDevice, '-b'], 180_000);
-    simctl(['install', createdDevice, app]);
-    const launched = simctl(['launch', createdDevice, config.identifier]);
+    // Fresh hosted simulators may need several minutes for their first boot
+    // and installation. Keep finite deadlines without treating a timeout as success.
+    stage('boot', ['bootstatus', createdDevice, '-b'], 300_000);
+    stage('install', ['install', createdDevice, app], 180_000);
+    const launched = stage('launch', ['launch', createdDevice, config.identifier], 180_000);
     const launchMatch = /^app\.fastdict\.translate:\s+(\d+)$/m.exec(launched);
     if (!launchMatch) throw new Error('simctl launch did not return the expected app process ID.');
     report.launchSucceeded = true;
@@ -89,12 +98,13 @@ async function main() {
     // Allow the WKWebView to initialize before collecting visual evidence.
     await new Promise(resolveDelay => setTimeout(resolveDelay, 12_000));
     const screenshot = join(output, 'simulator-launch.png');
-    simctl(['io', createdDevice, 'screenshot', screenshot]);
+    stage('screenshot', ['io', createdDevice, 'screenshot', screenshot], 120_000);
     const png = await readFile(screenshot);
     if (png.length < 24 || !png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error('Simulator screenshot was not a valid PNG.');
     report.screenshot = 'simulator-launch.png';
     report.screenshotWidth = png.readUInt32BE(16);
     report.screenshotHeight = png.readUInt32BE(20);
+    report.stage = 'completed';
     process.stdout.write(`Simulator launch succeeded; captured ${report.screenshotWidth}×${report.screenshotHeight}. This does not verify OCR, translation, or physical-device behavior.\n`);
   } catch (error) {
     report.error = error.message;
